@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "localport",
+    "localport-server",
+]
