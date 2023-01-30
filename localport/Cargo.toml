@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+liblocalport = {path = "../liblocalport"}
 futures-util = "0.3.25"
 tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread", "time"] }
 tokio-tungstenite = "0.18.0"

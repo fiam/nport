@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "liblocalport",
     "localport",
     "localport-server",
 ]

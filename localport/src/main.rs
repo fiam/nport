@@ -22,8 +22,10 @@ use tokio_tungstenite::{
     tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message},
 };
 
+use liblocalport::client;
+
 const N_CLIENTS: usize = 2; //set to desired number
-const SERVER: &'static str = "ws://127.0.0.1:3000/ws";
+const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
 
 #[tokio::main]
 async fn main() {
@@ -48,7 +50,7 @@ async fn main() {
 
 //creates a client. quietly exits on failure.
 async fn spawn_client(who: usize) {
-    let ws_stream = match connect_async(SERVER).await {
+    let mut ws_stream = match connect_async(SERVER).await {
         Ok((stream, response)) => {
             println!("Handshake for client {} has been completed", who);
             // This will be the HTTP response, same as with server this is the last moment we
@@ -62,62 +64,70 @@ async fn spawn_client(who: usize) {
         }
     };
 
-    let (mut sender, mut receiver) = ws_stream.split();
+    ws_stream
+        .send(Message::Binary(client::request::open("").unwrap()))
+        .await
+        .expect("can't open connection to server");
+
+    loop {
+        ws_stream.next().await;
+    }
+    //let (mut sender, mut receiver) = ws_stream.split();
 
     //we can ping the server for start
-    sender
-        .send(Message::Ping("Hello, Server!".into()))
-        .await
-        .expect("Can not send!");
+    // sender
+    //     .send(Message::Ping("Hello, Server!".into()))
+    //     .await
+    //     .expect("Can not send!");
 
     //spawn an async sender to push some more messages into the server
-    let mut send_task = tokio::spawn(async move {
-        for i in 1..30 {
-            // In any websocket error, break loop.
-            if sender
-                .send(Message::Text(format!("Message number {}...", i)))
-                .await
-                .is_err()
-            {
-                //just as with server, if send fails there is nothing we can do but exit.
-                return;
-            }
+    // let mut send_task = tokio::spawn(async move {
+    //     for i in 1..30 {
+    //         // In any websocket error, break loop.
+    //         if sender
+    //             .send(Message::Text(format!("Message number {}...", i)))
+    //             .await
+    //             .is_err()
+    //         {
+    //             //just as with server, if send fails there is nothing we can do but exit.
+    //             return;
+    //         }
 
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        }
+    //         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    //     }
 
-        // When we are done we may want our client to close connection cleanly.
-        println!("Sending close to {}...", who);
-        if let Err(e) = sender
-            .send(Message::Close(Some(CloseFrame {
-                code: CloseCode::Normal,
-                reason: Cow::from("Goodbye"),
-            })))
-            .await
-        {
-            println!("Could not send Close due to {:?}, probably it is ok?", e);
-        };
-    });
+    //     // When we are done we may want our client to close connection cleanly.
+    //     println!("Sending close to {}...", who);
+    //     if let Err(e) = sender
+    //         .send(Message::Close(Some(CloseFrame {
+    //             code: CloseCode::Normal,
+    //             reason: Cow::from("Goodbye"),
+    //         })))
+    //         .await
+    //     {
+    //         println!("Could not send Close due to {:?}, probably it is ok?", e);
+    //     };
+    // });
 
-    //receiver just prints whatever it gets
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            // print message and break if instructed to do so
-            if process_message(msg, who).is_break() {
-                break;
-            }
-        }
-    });
+    // //receiver just prints whatever it gets
+    // let mut recv_task = tokio::spawn(async move {
+    //     while let Some(Ok(msg)) = receiver.next().await {
+    //         // print message and break if instructed to do so
+    //         if process_message(msg, who).is_break() {
+    //             break;
+    //         }
+    //     }
+    // });
 
     //wait for either task to finish and kill the other task
-    tokio::select! {
-        _ = (&mut send_task) => {
-            recv_task.abort();
-        },
-        _ = (&mut recv_task) => {
-            send_task.abort();
-        }
-    }
+    // tokio::select! {
+    //     _ = (&mut send_task) => {
+    //         recv_task.abort();
+    //     },
+    //     _ = (&mut recv_task) => {
+    //         send_task.abort();
+    //     }
+    // }
 }
 
 /// Function to handle messages we get (with a slight twist that Frame variant is visible
