@@ -1,17 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::handler::Handler;
 
 #[derive(Default)]
 pub struct Registry {
-    map: Mutex<HashMap<String, Arc<Mutex<Handler>>>>,
+    map: RwLock<HashMap<String, Arc<RwLock<Handler>>>>,
 }
 
 impl Registry {
-    pub async fn register(&self, hostname: &str, handler: Arc<Mutex<Handler>>) -> bool {
-        let mut map = self.map.lock().await;
+    pub async fn register(&self, hostname: &str, handler: Arc<RwLock<Handler>>) -> bool {
+        let mut map = self.map.write().await;
         if map.contains_key(hostname) {
             false
         } else {
@@ -20,8 +20,8 @@ impl Registry {
         }
     }
 
-    pub async fn get(&self, hostname: &str) -> Option<Arc<Mutex<Handler>>> {
-        let map = self.map.lock().await;
+    pub async fn get(&self, hostname: &str) -> Option<Arc<RwLock<Handler>>> {
+        let map = self.map.read().await;
         map.get(hostname).cloned()
     }
 }

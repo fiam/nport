@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{net::SocketAddr, ops::ControlFlow};
 
 use anyhow::Result;
@@ -8,8 +9,8 @@ use futures::SinkExt;
 use futures::StreamExt;
 use thiserror;
 
-use liblocalport::client;
-use liblocalport::server;
+use liblocalport as lib;
+use tokio::sync::Mutex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -23,8 +24,8 @@ pub enum Error {
 
 pub struct Handler {
     hostname: String,
-    ws_sender: SplitSink<WebSocket, Message>,
-    ws_receiver: SplitStream<WebSocket>,
+    ws_sender: Mutex<SplitSink<WebSocket, Message>>,
+    ws_receiver: Mutex<SplitStream<WebSocket>>,
     who: SocketAddr,
 }
 
@@ -33,8 +34,8 @@ impl Handler {
         let (ws_sender, ws_receiver) = socket.split();
         Handler {
             hostname: "".to_owned(),
-            ws_sender,
-            ws_receiver,
+            ws_sender: Mutex::new(ws_sender),
+            ws_receiver: Mutex::new(ws_receiver),
             who,
         }
     }
@@ -47,25 +48,29 @@ impl Handler {
         self.hostname = hostname.to_owned();
     }
 
-    async fn recvData(&mut self) -> Result<Vec<u8>> {
-        match self.ws_receiver.next().await {
+    async fn recvData(&self) -> Result<Vec<u8>> {
+        println!("begin receive");
+        let mut receiver = self.ws_receiver.lock().await;
+        let r = match receiver.next().await {
             Some(received) => match received? {
                 Message::Binary(data) => Ok(data),
                 _ => Err(Error::UnexpectedMessageType.into()),
             },
             None => Err(Error::Disconnected.into()),
-        }
+        };
+        println!("end receive");
+        return r;
     }
 
-    pub async fn recvRequest(&mut self) -> Result<client::request::Request> {
+    pub async fn recvRequest(&self) -> Result<lib::client::Message> {
         let data = self.recvData().await?;
-        let request = client::request::decode(&data)?;
+        let request = lib::client::decode(&data)?;
         Ok(request)
     }
 
     pub async fn start(&mut self) -> Result<String> {
         let request = self.recvRequest().await?;
-        if let client::request::Request::Open(open) = request {
+        if let lib::client::Message::Open(open) = request {
             return Ok(open.hostname.to_owned());
         }
 
@@ -77,16 +82,14 @@ impl Handler {
         Ok(())
     }
 
-    pub async fn send(&mut self, resp: &server::response::Response) -> Result<()> {
-        if let Err(err) = self
-            .ws_sender
-            .send(Message::Binary(server::response::encode(resp).unwrap()))
-            .await
-        {
-            Err(err.into())
-        } else {
-            Ok(())
-        }
+    pub async fn send(&self, resp: &lib::server::Message) -> Result<()> {
+        println!("begin send");
+        let encoded = lib::server::encode(resp)?;
+        let message = Message::Binary(encoded);
+        let mut sender = self.ws_sender.lock().await;
+        sender.send(message).await?;
+        println!("end send");
+        Ok(())
     }
 
     /// helper to print contents of messages to stdout. Has special treatment for Close.

@@ -18,24 +18,27 @@
 
 use anyhow::Result;
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Host, State, TypedHeader,
+        Host, OriginalUri, State, TypedHeader,
     },
-    http::{Request, StatusCode},
+    http::{HeaderMap, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get, get_service},
     Router,
 };
-use liblocalport::{client, server};
+use liblocalport::client;
 use names;
 use registry::Registry;
-use tokio::{runtime::Handle, sync::Mutex};
+use tokio::{
+    runtime::Handle,
+    sync::{Mutex, RwLock},
+};
 
+use std::ops::ControlFlow;
 use std::{borrow::Cow, sync::Arc};
 use std::{net::SocketAddr, path::PathBuf};
-use std::{ops::ControlFlow, sync::RwLock};
 use tower::ServiceExt;
 use tower_http::{
     services::ServeDir,
@@ -50,6 +53,8 @@ use axum::extract::ws::CloseFrame;
 
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{future::Shared, sink::SinkExt, stream::StreamExt};
+
+use liblocalport as lib;
 
 mod handler;
 mod registry;
@@ -140,7 +145,7 @@ async fn ws_handler(
 
 /// Actual websocket statemachine (one will be spawned per connection)
 async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
-    let handler = Arc::new(Mutex::new(handler::Handler::new(socket, who)));
+    let handler = Arc::new(RwLock::new(handler::Handler::new(socket, who)));
     //send a ping (unsupported by some browsers) just to kick things off and get a response
     // if let Ok(_) = socket.send(Message::Ping(vec![1, 2, 3])).await {
     //     println!("Pinged {}...", who);
@@ -151,9 +156,9 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
     //     return;
     // }
     loop {
-        let request = handler.lock().await.recvRequest().await;
+        let request = handler.read().await.recvRequest().await;
         let result = match request {
-            Ok(request) => handle_request(&state, handler.clone(), request).await,
+            Ok(message) => handle_message(&state, handler.clone(), message).await,
             Err(error) => {
                 println!("client failed {}", error);
                 Err(error)
@@ -284,14 +289,14 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
     println!("Websocket context {} destroyed", who);
 }
 
-async fn handle_request(
+async fn handle_message(
     state: &SharedState,
-    shared_handler: Arc<Mutex<handler::Handler>>,
-    request: client::request::Request,
+    shared_handler: Arc<RwLock<handler::Handler>>,
+    msg: lib::client::Message,
 ) -> Result<ControlFlow<()>> {
-    match request {
-        client::request::Request::Open(open) => {
-            return handle_request_open(&state, shared_handler.clone(), open)
+    match msg {
+        lib::client::Message::Open(open) => {
+            return handle_message_open(&state, shared_handler.clone(), open)
                 .await
                 .map(|_| ControlFlow::Continue(()))
         }
@@ -299,17 +304,18 @@ async fn handle_request(
     Ok(ControlFlow::Continue(()))
 }
 
-async fn handle_request_open(
+async fn handle_message_open(
     state: &SharedState,
-    shared_handler: Arc<Mutex<handler::Handler>>,
-    open: client::request::Open,
+    shared_handler: Arc<RwLock<handler::Handler>>,
+    open: lib::client::Open,
 ) -> Result<()> {
-    use liblocalport::server::response;
-    let mut handler = shared_handler.lock().await;
+    use lib::server;
+
+    let mut handler = shared_handler.write().await;
     if handler.is_open() {
         return handler
-            .send(&response::Response::Open(response::Open::failed(
-                response::OpenResult::AlreadyOpen,
+            .send(&server::Message::Open(server::Open::failed(
+                server::OpenResult::AlreadyOpen,
             )))
             .await;
     }
@@ -327,30 +333,47 @@ async fn handle_request_open(
         .await
     {
         return handler
-            .send(&response::Response::Open(response::Open::failed(
-                response::OpenResult::InUse,
+            .send(&server::Message::Open(server::Open::failed(
+                server::OpenResult::InUse,
             )))
             .await;
     }
     tracing::debug!("client registered on {}", hostname);
     handler.set_hostname(&hostname);
     return handler
-        .send(&response::Response::Open(response::Open::ok(&hostname)))
+        .send(&server::Message::Open(server::Open::ok(&hostname)))
         .await;
 }
 
 async fn forwarding_handler(
     State(state): State<SharedState>,
-    host: Option<TypedHeader<axum::headers::Host>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    method: Method,
+    OriginalUri(original_uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Response {
-    let hostname = match host {
-        Some(header) => header.to_string(),
-        None => "".to_owned(),
+    println!("HDRS {:?}", headers);
+    let hostname = if let Some(host) = headers.get("host") {
+        host.to_str().unwrap_or_default().to_string()
+    } else {
+        "".to_string()
     };
 
-    match state.lock().await.registry().get(&hostname).await {
+    let handler = state.lock().await.registry().get(&hostname).await;
+    match handler {
         Some(handler) => {
+            let request = lib::server::HTTPRequest {
+                uri: original_uri.to_string(),
+                method: method.to_string(),
+                protocol: "proto".to_string(),
+                body: body.to_vec(),
+            };
+            handler
+                .read()
+                .await
+                .send(&lib::server::Message::HTTPRequest(request))
+                .await;
             return (StatusCode::SERVICE_UNAVAILABLE, "Unimplemented").into_response();
         }
         None => {
