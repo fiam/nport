@@ -2,6 +2,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use server::Server;
 
+mod cert;
 mod server;
 
 #[tokio::main]
