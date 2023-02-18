@@ -1,71 +1,83 @@
 use std::sync::Arc;
 
+use futures_util::stream::SplitSink;
+use futures_util::stream::SplitStream;
+use futures_util::SinkExt;
+use futures_util::StreamExt;
+use tokio::sync::RwLock;
+
+use tokio::net::TcpStream;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::MaybeTlsStream;
+use tokio_tungstenite::WebSocketStream;
+
 use liblocalport as lib;
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::error::{Error, Result};
-use crate::transport::{Receiver, Sender, Transport};
+//use crate::transport::{Receiver, Sender, Transport};
 
-struct TxRx {
-    sender: Box<dyn Sender>,
-    receiver: Box<dyn Receiver>,
+const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
+
+struct Connection {
+    sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+    receiver: Arc<RwLock<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
 }
 
 pub struct Client {
-    hostname: String,
-    transport: Box<dyn Transport>,
-    //    txrx: Option<TxRx>,
+    port: u16,
+    connection: RwLock<Option<Connection>>,
 }
 
 impl Client {
-    pub fn new(hostname: &str, transport: Box<dyn Transport>) -> Self {
+    pub fn new(port: u16) -> Self {
         Self {
-            hostname: hostname.to_owned(),
-            transport,
-            //txrx: None,
+            port,
+            connection: RwLock::new(None),
         }
     }
 
-    // pub fn new_ws(hostname: &str, server: &str) -> Self {
-    //     Client::new(hostname, crate::transport::ws(server))
-    // }
+    pub fn port(&self) -> u16 {
+        self.port
+    }
 
     pub async fn connect(&self) -> Result<()> {
-        let (mut sender, receiver) = self.transport.connect().await?;
-        let (tx, rx) = std::sync::mpsc::channel::<lib::client::Message>();
-        let mut send_task = tokio::spawn(async move {
-            loop {
-                match rx.recv() {
-                    Ok(msg) => {
-                        println!("SEND MSG");
-                        sender.send(&msg);
-                    }
-                    Err(error) => {
-                        println!("error receiving {}", error);
-                        return;
-                    }
-                }
-            }
-        });
+        let (stream, response) = connect_async(SERVER).await?;
+        tracing::debug!("server response {:?}", response);
+        let (sender, receiver) = stream.split();
+        let connection = Connection {
+            sender: Arc::new(RwLock::new(sender)),
+            receiver: Arc::new(RwLock::new(receiver)),
+        };
+        *self.connection.write().await = Some(connection);
         Ok(())
     }
 
-    // async fn txrx(&mut self) -> Result<&TxRx> {
-    //     if self.txrx.is_some() {
-    //         return Ok(&self.txrx.unwrap());
-    //     }
-    //     let txrx = &self.txrx;
-    //     match &txrx {
-    //         Some(txrx) => Ok(txrx),
-    //         None => {
-    //             let (sender, receiver) = self.transport.connect().await?;
-    //             self.txrx = Some(TxRx { sender, receiver });
-    //             return self.txrx().await;
-    //         }
-    //     }
-    // }
+    pub async fn send(&self, msg: &lib::client::Message) -> Result<()> {
+        let connection = self.connection.read().await;
+        match connection.as_ref() {
+            Some(connection) => {
+                let encoded = lib::client::encode(msg)?;
+                let encoded_msg = Message::Binary(encoded);
+                let mut sender = connection.sender.write().await;
+                return Ok(sender.send(encoded_msg).await?);
+            }
+            None => Err(Error::Disconnected),
+        }
+    }
 
-    // async fn recv(&mut self) -> Result<lib::server::Message> {
-    //     let mut txrx = self.txrx()?;
-    //     Ok(txrx.receiver.recv().await?)
-    // }
+    pub async fn recv(&self) -> Result<lib::server::Message> {
+        let connection = self.connection.read().await;
+        match connection.as_ref() {
+            Some(connection) => {
+                let mut receiver = connection.receiver.write().await;
+                let received = receiver.next().await.ok_or(Error::Disconnected)??;
+                match received {
+                    Message::Binary(data) => Ok(lib::server::decode(&data)?),
+                    _ => Err(Error::InvalidMessageType),
+                }
+            }
+            None => Err(Error::Disconnected),
+        }
+    }
 }

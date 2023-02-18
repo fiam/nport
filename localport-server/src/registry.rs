@@ -20,6 +20,18 @@ impl Registry {
         }
     }
 
+    pub async fn deregister(&self, handler: Arc<RwLock<Handler>>) -> bool {
+        let handler = handler.read().await;
+        let hostname = handler.hostname();
+        let mut map = self.map.write().await;
+        if map.contains_key(hostname) {
+            map.remove(hostname);
+            true
+        } else {
+            false
+        }
+    }
+
     pub async fn get(&self, hostname: &str) -> Option<Arc<RwLock<Handler>>> {
         let map = self.map.read().await;
         map.get(hostname).cloned()

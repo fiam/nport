@@ -16,159 +16,85 @@ mod client;
 mod error;
 mod transport;
 
+use clap::Parser;
 use futures_util::stream::FuturesUnordered;
 use futures_util::{SinkExt, StreamExt};
-use std::borrow::Cow;
 use std::ops::ControlFlow;
 use std::time::Instant;
-use tokio::sync::mpsc::{channel, Sender};
-
-// we will use tungstenite for websocket client impl (same library as what axum is using)
-use tokio_tungstenite::{
-    connect_async,
-    tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message},
-};
+use tokio::task::JoinHandle;
 
 use liblocalport as lib;
 
 use client::Client;
 
+use crate::error::{Error, Result};
 use crate::transport::Transport;
 
-const N_CLIENTS: usize = 1; //set to desired number
 const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
+
+#[derive(clap::Parser)]
+struct Arguments {
+    #[arg(long, short = 'H')]
+    hostname: String,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    Http { port: u16 },
+}
 
 #[tokio::main]
 async fn main() {
-    let start_time = Instant::now();
-    //spawn several clients that will concurrently talk to the server
-    let mut clients = (0..N_CLIENTS)
-        .into_iter()
-        .map(|cli| tokio::spawn(spawn_client(cli)))
-        .collect::<FuturesUnordered<_>>();
+    let args = Arguments::parse();
+
+    let mut clients = FuturesUnordered::new();
+
+    match args.command {
+        Command::Http { port } => {
+            clients.push(tokio::spawn(spawn_http_client(args.hostname, port)));
+        }
+    }
 
     //wait for all our clients to exit
     while clients.next().await.is_some() {}
-
-    let end_time = Instant::now();
-
-    //total time should be the same no matter how many clients we spawn
-    println!(
-        "Total time taken {:#?} with {N_CLIENTS} concurrent clients, should be about 6.45 seconds.",
-        end_time - start_time
-    );
 }
 
-//creates a client. quietly exits on failure.
-async fn spawn_client(who: usize) {
-    let (mut sender, mut receiver) = match crate::transport::ws(SERVER).connect().await {
-        Ok((sender, receiver)) => (sender, receiver),
+async fn spawn_http_client(hostname: String, port: u16) {
+    let client = Client::new(port);
+    match client.connect().await {
+        Ok(()) => {
+            println!("connected");
+            client
+                .send(&lib::client::Message::Open(lib::client::Open {
+                    hostname: hostname.to_owned(),
+                }))
+                .await;
+        }
         Err(error) => {
-            println!("could not connect: {}", error);
+            println!("can't connect {}", error);
             return;
         }
-    };
+    }
 
-    let (tx, mut rx) = channel::<lib::client::Message>(1);
-    let mut send_task = tokio::spawn(async move {
-        sender
-            .send(&lib::client::Message::Open(lib::client::Open {
-                hostname: "".to_owned(),
-            }))
-            .await
-            .unwrap();
-
-        while let Some(msg) = rx.recv().await {
-            println!("got message to send");
-        }
-    });
-
-    // let mut client = Client::new_ws("", SERVER);
-    // let connection = client.connect();
-    // if let Err(error) = connection.await {
-    //     println!("could not connect: {}", error);
-    // }
-    println!("connected");
-    // let mut ws_stream = match connect_async(SERVER).await {
-    //     Ok((stream, response)) => {
-    //         println!("Handshake for client {} has been completed", who);
-    //         // This will be the HTTP response, same as with server this is the last moment we
-    //         // can still access HTTP stuff.
-    //         println!("Server response was {:?}", response);
-    //         stream
-    //     }
-    //     Err(e) => {
-    //         println!("WebSocket handshake for client {who} failed with {e}!");
-    //         return;
-    //     }
-    // };
-
-    // ws_stream
-    //     .send(Message::Binary(lib::client::request::open("").unwrap()))
-    //     .await
-    //     .expect("can't open connection to server");
-
-    // loop {
-    //     ws_stream.next().await;
-    // }
-    //let (mut sender, mut receiver) = ws_stream.split();
-
-    //we can ping the server for start
-    // sender
-    //     .send(Message::Ping("Hello, Server!".into()))
-    //     .await
-    //     .expect("Can not send!");
-
-    //spawn an async sender to push some more messages into the server
-    // let mut send_task = tokio::spawn(async move {
-    //     for i in 1..30 {
-    //         // In any websocket error, break loop.
-    //         if sender
-    //             .send(Message::Text(format!("Message number {}...", i)))
-    //             .await
-    //             .is_err()
-    //         {
-    //             //just as with server, if send fails there is nothing we can do but exit.
-    //             return;
-    //         }
-
-    //         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    //     }
-
-    //     // When we are done we may want our client to close connection cleanly.
-    //     println!("Sending close to {}...", who);
-    //     if let Err(e) = sender
-    //         .send(Message::Close(Some(CloseFrame {
-    //             code: CloseCode::Normal,
-    //             reason: Cow::from("Goodbye"),
-    //         })))
-    //         .await
-    //     {
-    //         println!("Could not send Close due to {:?}, probably it is ok?", e);
-    //     };
-    // });
-
-    // //receiver just prints whatever it gets
-    let mut recv_tx = tx.clone();
-    let mut recv_task = tokio::spawn(async move {
-        while let Ok(msg) = receiver.recv().await {
-            println!("got server message");
-            dispatch_message(msg, recv_tx.clone());
-        }
-    });
-
-    // wait for either task to finish and kill the other task
-    tokio::select! {
-        _ = (&mut send_task) => {
-            recv_task.abort();
-        },
-        _ = (&mut recv_task) => {
-            send_task.abort();
+    loop {
+        match client.recv().await {
+            Ok(msg) => {
+                println!("got msg {:?}", msg);
+                if let Err(error) = dispatch_message(&client, msg).await {
+                    println!("error handling msg {:?}", error);
+                }
+            }
+            Err(error) => {
+                println!("recv error {:?}", error);
+                return;
+            }
         }
     }
 }
 
-fn dispatch_message(msg: lib::server::Message, tx: Sender<liblocalport::client::Message>) {
+async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<()> {
     use lib::server;
 
     match msg {
@@ -177,8 +103,47 @@ fn dispatch_message(msg: lib::server::Message, tx: Sender<liblocalport::client::
         }
         server::Message::HTTPRequest(req) => {
             println!("got request {:?}", req);
+            dispatch_message_http_request(client, &req).await?
         }
     }
+
+    Ok(())
+}
+
+async fn dispatch_message_http_request(
+    client: &Client,
+    req: &lib::server::HTTPRequest,
+) -> Result<()> {
+    use hyper::body::HttpBody;
+    use hyper::{
+        http::{Request, Response},
+        Method,
+    };
+
+    let uri = format!("http://localhost:{}{}", client.port(), req.uri);
+    let method = Method::from_bytes(req.method.as_bytes()).unwrap();
+    let body = hyper::Body::from(req.body.clone());
+    let request = Request::builder().uri(uri).method(method).body(body)?;
+    dbg!(&request);
+    let http_client = hyper::client::Client::new();
+    let http_response = http_client.request(request).await?;
+    let resp_status_code = http_response.status().as_u16();
+    let resp_headers = http_response
+        .headers()
+        .into_iter()
+        .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().to_owned()))
+        .collect();
+    let resp_body = hyper::body::to_bytes(http_response.into_body()).await?;
+    let response = lib::client::HttpResponse {
+        uuid: req.uuid.clone(),
+        headers: resp_headers,
+        body: resp_body.to_vec(),
+        status_code: resp_status_code,
+    };
+    client
+        .send(&lib::client::Message::HttpResponse(response))
+        .await?;
+    Ok(())
 }
 
 // Function to handle messages we get (with a slight twist that Frame variant is visible

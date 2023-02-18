@@ -12,6 +12,10 @@ pub enum Error {
     Tungstenite(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("error in library {0}")]
     Lib(#[from] liblocalport::Error),
+    #[error("http client error {0}")]
+    Hyper(#[from] hyper::Error),
+    #[error("http client error {0}")]
+    HyperHttp(#[from] hyper::http::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

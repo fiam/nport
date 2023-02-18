@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -8,9 +10,18 @@ pub struct Open {
     pub hostname: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpResponse {
+    pub uuid: String,
+    pub headers: HashMap<String, Vec<u8>>,
+    pub status_code: u16,
+    pub body: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     Open(Open),
+    HttpResponse(HttpResponse),
 }
 
 pub fn decode(data: &[u8]) -> Result<Message> {

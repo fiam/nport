@@ -8,9 +8,11 @@ edition = "2021"
 [dependencies]
 liblocalport = {path = "../liblocalport"}
 futures-util = "0.3.25"
-tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread", "time", "sync"] }
 tokio-tungstenite = "0.18.0"
 thiserror = "1.0.38"
 async-trait = "0.1.64"
 tracing-subscriber = "0.3.16"
 tracing = "0.1.37"
+clap = { version = "4.1.4", features = ["derive"] }
+hyper = {version = "0.14.24", features = ["client"] }

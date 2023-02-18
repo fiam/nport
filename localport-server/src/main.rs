@@ -23,7 +23,8 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Host, OriginalUri, State, TypedHeader,
     },
-    http::{HeaderMap, Method, Request, StatusCode},
+    headers::HeaderName,
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get, get_service},
     Router,
@@ -33,7 +34,7 @@ use names;
 use registry::Registry;
 use tokio::{
     runtime::Handle,
-    sync::{Mutex, RwLock},
+    sync::{oneshot::Receiver, Mutex, RwLock},
 };
 
 use std::ops::ControlFlow;
@@ -46,6 +47,7 @@ use tower_http::{
 };
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
 
 //allows to extract the IP of connecting user
 use axum::extract::connect_info::ConnectInfo;
@@ -156,7 +158,7 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
     //     return;
     // }
     loop {
-        let request = handler.read().await.recvRequest().await;
+        let request = handler.read().await.recv().await;
         let result = match request {
             Ok(message) => handle_message(&state, handler.clone(), message).await,
             Err(error) => {
@@ -178,6 +180,8 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
             }
         }
     }
+
+    state.lock().await.registry().deregister(handler).await;
 
     // match handler.start().await {
     //     Ok(hostname) => {
@@ -300,6 +304,14 @@ async fn handle_message(
                 .await
                 .map(|_| ControlFlow::Continue(()))
         }
+        lib::client::Message::HttpResponse(response) => {
+            return handle_message_http_response(&state, shared_handler.clone(), response)
+                .await
+                .map(|_| ControlFlow::Continue(()))
+        }
+        _ => {
+            print!("msg {:?}", msg);
+        }
     }
     Ok(ControlFlow::Continue(()))
 }
@@ -345,6 +357,21 @@ async fn handle_message_open(
         .await;
 }
 
+async fn handle_message_http_response(
+    state: &SharedState,
+    shared_handler: Arc<RwLock<handler::Handler>>,
+    response: lib::client::HttpResponse,
+) -> Result<()> {
+    use lib::server;
+
+    println!("GOT HTTPRESPONSE");
+    let handler = shared_handler.read().await;
+    println!("LOCKED");
+    handler.send_response(response).await;
+    println!("OK RESPONSE");
+    Ok(())
+}
+
 async fn forwarding_handler(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -360,24 +387,77 @@ async fn forwarding_handler(
         "".to_string()
     };
 
+    let rx = enqueue_request(
+        state,
+        &hostname,
+        addr,
+        method,
+        original_uri.to_string(),
+        headers,
+        body,
+    )
+    .await;
+
+    match rx {
+        Ok(rx) => {
+            println!("AWAIT FOR RESPONSE");
+            let response = rx.await.unwrap();
+            println!("got HTTP response {:?}", response);
+
+            let mut header_map = HeaderMap::new();
+            for (k, val) in response.headers.into_iter() {
+                println!("SET HEADER {}", k);
+                if k == "content-length" {
+                    continue;
+                }
+                continue;
+                let name = HeaderName::from_bytes(k.as_bytes()).unwrap();
+                header_map.insert(name, HeaderValue::from_bytes(&val).unwrap());
+            }
+            return (
+                StatusCode::from_u16(response.status_code).unwrap(),
+                header_map,
+                response.body,
+            )
+                .into_response();
+        }
+        Err(error) => {
+            println!("error enqueueing {}", error);
+            return (StatusCode::NOT_FOUND, "Not Found").into_response();
+        }
+    }
+}
+
+async fn enqueue_request(
+    state: SharedState,
+    hostname: &str,
+    addr: SocketAddr,
+    method: Method,
+    original_uri: String,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Receiver<lib::client::HttpResponse>> {
     let handler = state.lock().await.registry().get(&hostname).await;
     match handler {
         Some(handler) => {
+            let uuid = Uuid::new_v4().to_string();
+            let rx = handler.read().await.register(&uuid).await;
             let request = lib::server::HTTPRequest {
-                uri: original_uri.to_string(),
+                uuid: uuid,
+                uri: original_uri,
                 method: method.to_string(),
                 protocol: "proto".to_string(),
                 body: body.to_vec(),
             };
+
             handler
                 .read()
                 .await
                 .send(&lib::server::Message::HTTPRequest(request))
-                .await;
-            return (StatusCode::SERVICE_UNAVAILABLE, "Unimplemented").into_response();
+                .await?;
+
+            Ok(rx)
         }
-        None => {
-            return (StatusCode::NOT_FOUND, "Not Found").into_response();
-        }
+        None => Err(handler::Error::Disconnected.into()),
     }
 }

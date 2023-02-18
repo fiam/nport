@@ -37,13 +37,14 @@ impl Open {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HTTPRequest {
+    pub uuid: String,
     pub uri: String,
     pub method: String,
     pub protocol: String,
     pub body: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
     Open(Open),
     HTTPRequest(HTTPRequest),
