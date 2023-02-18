@@ -1,4 +1,4 @@
-use std::io::Bytes;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -38,9 +38,11 @@ impl Open {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HTTPRequest {
     pub uuid: String,
-    pub uri: String,
-    pub method: String,
+    pub addr: String,
     pub protocol: String,
+    pub method: String,
+    pub uri: String,
+    pub headers: HashMap<String, Vec<u8>>,
     pub body: Vec<u8>,
 }
 

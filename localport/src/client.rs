@@ -15,7 +15,6 @@ use liblocalport as lib;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::error::{Error, Result};
-//use crate::transport::{Receiver, Sender, Transport};
 
 const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
 
