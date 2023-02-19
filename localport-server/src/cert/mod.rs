@@ -1,6 +1,11 @@
-mod cert;
 mod cloudflare;
 mod dns;
+mod generator;
+mod store;
+
+pub use cloudflare::Updater as CloudflareUpdater;
+pub use generator::Generator;
+pub use store::{CertStore, Store};
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +28,7 @@ mod tests {
         }
         let updater = Box::new(cloudflare::Updater::new(&token, &zone_id));
 
-        let cert = cert::Cert::new(email, domain, true, updater);
+        let cert = generator::Generator::new(email, domain, true, updater);
         cert.request().await.unwrap();
     }
 }

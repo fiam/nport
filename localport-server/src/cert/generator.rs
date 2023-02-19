@@ -10,19 +10,19 @@ use trust_dns_resolver::{
 
 use super::dns::Updater;
 
-pub struct Cert {
+pub struct Generator {
     email: String,
     domain: String,
     staging: bool,
-    updater: Box<dyn Updater>,
+    updater: Box<dyn Updater + Send + Sync>,
 }
 
-impl Cert {
+impl Generator {
     pub fn new<T: AsRef<str>>(
         email: T,
         domain: T,
         staging: bool,
-        updater: Box<dyn Updater>,
+        updater: Box<dyn Updater + Send + Sync>,
     ) -> Self {
         Self {
             email: email.as_ref().to_string(),
@@ -79,6 +79,7 @@ impl Cert {
             loop {
                 match self.txt_lookup(&record).await {
                     Ok(records) => {
+                        println!("RECORDS {:?} {}", records, token);
                         if records.contains(&token) {
                             // Wait a bit after confirmation, otherwise we get
                             // random failures due to propagation delay
@@ -93,7 +94,7 @@ impl Cert {
                 if wait_start.elapsed().as_secs() > 90 {
                     return Err(anyhow::anyhow!("DNS update timed out"));
                 }
-                sleep(Duration::from_millis(1000)).await;
+                sleep(Duration::from_millis(5000)).await;
             }
             debug!("DNS challenge took {:?}", wait_start.elapsed());
 

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use axum::{
@@ -8,7 +8,10 @@ use axum::{
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
-use tokio::sync::{oneshot::Receiver, RwLock};
+use tokio::{
+    sync::{oneshot::Receiver, RwLock},
+    time::timeout,
+};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
@@ -16,6 +19,8 @@ use liblocalport as lib;
 
 use super::client::Client;
 use super::state::SharedState;
+
+const CLIENT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 pub async fn websocket(
     State(state): State<SharedState>,
@@ -48,7 +53,7 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
         }
     }
 
-    state.lock().await.registry().deregister(client).await;
+    state.registry().deregister(client).await;
     debug!(who = ?who, "client disconnected");
 }
 
@@ -97,7 +102,6 @@ async fn handle_message_open(
             .next()
             .unwrap()
     };
-    let state = state.lock().await;
     if !state
         .registry()
         .register(&hostname, shared_client.clone())
@@ -153,7 +157,20 @@ pub async fn forward(
 
     match rx {
         Ok(rx) => {
-            let response = rx.await.unwrap();
+            let response = match timeout(Duration::from_secs(CLIENT_REQUEST_TIMEOUT_SECS), rx).await
+            {
+                Ok(result) => match result {
+                    Ok(response) => response,
+                    Err(error) => {
+                        warn!(error=?error, "could not receive HTTP response");
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                },
+                Err(error) => {
+                    warn!(error=?error, "timeout awaiting HTTP response");
+                    return StatusCode::GATEWAY_TIMEOUT.into_response();
+                }
+            };
             debug!(response.uuid, "HTTP response");
             let header_map = response
                 .headers
@@ -203,7 +220,7 @@ async fn enqueue_request(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Receiver<lib::client::HttpResponse>> {
-    let handler = state.lock().await.registry().get(hostname).await;
+    let handler = state.registry().get(hostname).await;
     match handler {
         Some(handler) => {
             let uuid = Uuid::new_v4().to_string();
