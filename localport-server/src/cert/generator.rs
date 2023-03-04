@@ -79,7 +79,6 @@ impl Generator {
             loop {
                 match self.txt_lookup(&record).await {
                     Ok(records) => {
-                        println!("RECORDS {:?} {}", records, token);
                         if records.contains(&token) {
                             // Wait a bit after confirmation, otherwise we get
                             // random failures due to propagation delay

@@ -6,38 +6,42 @@ use serde_json;
 use crate::error::Result;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub enum OpenResult {
+pub enum HttpOpenResult {
     Ok,
     AlreadyOpen,
     InUse,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Open {
+pub struct HttpOpen {
     pub hostname: String,
-    pub result: OpenResult,
+    pub local_port: u16,
+    pub result: HttpOpenResult,
 }
 
-impl Open {
-    pub fn ok(hostname: &str) -> Self {
-        Open {
+impl HttpOpen {
+    pub fn ok(hostname: &str, local_port: u16) -> Self {
+        Self {
             hostname: hostname.to_owned(),
-            result: OpenResult::Ok,
+            local_port,
+            result: HttpOpenResult::Ok,
         }
     }
 
-    pub fn failed(result: OpenResult) -> Self {
-        assert!(result != OpenResult::Ok);
-        Open {
+    pub fn failed(result: HttpOpenResult) -> Self {
+        assert!(result != HttpOpenResult::Ok);
+        Self {
             hostname: "".to_owned(),
+            local_port: 0,
             result,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct HTTPRequest {
+pub struct HttpRequest {
     pub uuid: String,
+    pub hostname: String,
     pub addr: String,
     pub protocol: String,
     pub method: String,
@@ -48,8 +52,8 @@ pub struct HTTPRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    Open(Open),
-    HTTPRequest(HTTPRequest),
+    HttpOpen(HttpOpen),
+    HttpRequest(HttpRequest),
 }
 
 pub fn decode(data: &[u8]) -> Result<Message> {

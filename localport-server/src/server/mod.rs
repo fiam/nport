@@ -2,8 +2,13 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     body::Body,
-    extract::Host,
-    http::Request,
+    extract::{Host, State},
+    http::{
+        uri::{Authority, Scheme},
+        Request, Uri,
+    },
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{any, get},
     Router,
 };
@@ -24,6 +29,34 @@ pub use builder::Builder;
 
 use crate::cert;
 
+use self::state::AppState;
+
+static DEFAULT_HTTPS_PORT: u16 = 443;
+
+async fn to_tls_middleware<B>(
+    State(state): State<SharedState>,
+    request: Request<B>,
+    next: Next<B>,
+) -> Response {
+    if state.has_tls() && !state.via_tls() {
+        let mut parts = request.uri().clone().into_parts();
+        parts.scheme = Some(Scheme::HTTPS);
+        let authority_str = if state.https_port() == DEFAULT_HTTPS_PORT {
+            state.hostname().to_string()
+        } else {
+            format!("{}:{}", state.hostname(), state.https_port())
+        };
+        if let Ok(authority) = authority_str.parse::<Authority>() {
+            parts.authority = Some(authority);
+            if let Ok(uri) = Uri::from_parts(parts) {
+                return axum::response::Redirect::permanent(&uri.to_string()).into_response();
+            }
+        }
+    }
+
+    next.run(request).await
+}
+
 pub struct Server {
     http_port: u16,
     https_port: u16,
@@ -43,6 +76,11 @@ impl Server {
     fn build_app(&self, state: SharedState) -> Router {
         let host_router = Router::new()
             .route("/v1/connect", get(handlers::websocket))
+            .route("/", get(handlers::home))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                to_tls_middleware,
+            ))
             .with_state(state.clone());
 
         let forwarding_router = Router::new()
@@ -50,25 +88,28 @@ impl Server {
             .with_state(state.clone());
 
         let public_hostname = self.public_hostname().to_string();
+
+        let chooser = |Host(hostname): Host, request: Request<Body>| async move {
+            // Split port
+            let host = if let Some(parts) = hostname.rsplit_once(':') {
+                parts.0
+            } else {
+                &hostname
+            };
+            tracing::debug!(host, public_hostname, "routing request");
+            let router = if host == public_hostname {
+                tracing::debug!(host, "routing request to main");
+                host_router
+            } else {
+                tracing::debug!(host, "routing request to forwarding");
+                forwarding_router
+            };
+            router.oneshot(request).await
+        };
+
         Router::new()
-            .route(
-                "/*path",
-                any(|Host(hostname): Host, request: Request<Body>| async move {
-                    // Split port
-                    let host = if let Some(parts) = hostname.rsplit_once(':') {
-                        parts.0
-                    } else {
-                        &hostname
-                    };
-                    tracing::trace!(host, "routing request");
-                    let router = if host == public_hostname {
-                        host_router
-                    } else {
-                        forwarding_router
-                    };
-                    router.oneshot(request).await
-                }),
-            )
+            .route("/*path", any(chooser.clone()))
+            .route("/", any(chooser))
             .layer(
                 TraceLayer::new_for_http()
                     .make_span_with(DefaultMakeSpan::default().include_headers(true)),
@@ -123,7 +164,11 @@ impl Server {
     }
 
     pub async fn run(&self) {
-        let state = SharedState::default();
+        let state = Arc::new(AppState::new(
+            self.http_port,
+            self.https_port,
+            self.public_hostname(),
+        ));
 
         let http = self.run_http(state.clone());
         let https = self.run_https(state.clone());

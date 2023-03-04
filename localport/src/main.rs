@@ -17,11 +17,9 @@ mod error;
 mod transport;
 
 use clap::Parser;
-use futures_util::stream::FuturesUnordered;
 use futures_util::{SinkExt, StreamExt};
-use std::ops::ControlFlow;
-use std::time::Instant;
-use tokio::task::JoinHandle;
+use tracing::debug;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use liblocalport as lib;
 
@@ -43,39 +41,38 @@ struct Arguments {
 #[derive(clap::Subcommand)]
 enum Command {
     Http { port: u16 },
+    Tcp { port: u16 },
 }
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "".into()))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let args = Arguments::parse();
 
-    let mut clients = FuturesUnordered::new();
+    let client = Client::new();
 
-    match args.command {
-        Command::Http { port } => {
-            clients.push(tokio::spawn(spawn_http_client(args.hostname, port)));
+    match client.connect().await {
+        Ok(()) => {
+            tracing::info!(server = SERVER, "connected");
+        }
+        Err(error) => {
+            tracing::error!(error=?error, "can't connect to server");
+            return;
         }
     }
 
-    //wait for all our clients to exit
-    while clients.next().await.is_some() {}
-}
+    let result = match args.command {
+        Command::Http { port } => client.http_open(&args.hostname, port).await,
+        Command::Tcp { port } => client.tcp_open(&args.hostname, 0, port).await,
+    };
 
-async fn spawn_http_client(hostname: String, port: u16) {
-    let client = Client::new(port);
-    match client.connect().await {
-        Ok(()) => {
-            println!("connected");
-            client
-                .send(&lib::client::Message::Open(lib::client::Open {
-                    hostname: hostname.to_owned(),
-                }))
-                .await;
-        }
-        Err(error) => {
-            println!("can't connect {}", error);
-            return;
-        }
+    if let Err(error) = result {
+        tracing::error!(error=?error, "can't open connection");
+        return;
     }
 
     loop {
@@ -98,10 +95,18 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
     use lib::server;
 
     match msg {
-        server::Message::Open(open) => {
-            println!("opened {}", open.hostname);
+        server::Message::HttpOpen(open) => {
+            if let Err(err) = client.http_register(&open).await {
+                tracing::error!(error=?err, "creating HTTP host");
+            } else {
+                tracing::info!(
+                    hostname = open.hostname,
+                    local_port = open.local_port,
+                    "HTTP host created"
+                )
+            }
         }
-        server::Message::HTTPRequest(req) => {
+        server::Message::HttpRequest(req) => {
             println!("got request {:?}", req);
             dispatch_message_http_request(client, &req).await?
         }
@@ -112,38 +117,63 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
 
 async fn dispatch_message_http_request(
     client: &Client,
-    req: &lib::server::HTTPRequest,
+    req: &lib::server::HttpRequest,
 ) -> Result<()> {
-    use hyper::body::HttpBody;
-    use hyper::{
-        http::{Request, Response},
-        Method,
+    let payload = match send_http_request(client, req).await {
+        Ok(data) => lib::client::HttpResponsePayload::Data(data),
+        Err(error) => lib::client::HttpResponsePayload::Error(error),
     };
-
-    let uri = format!("http://localhost:{}{}", client.port(), req.uri);
-    let method = Method::from_bytes(req.method.as_bytes()).unwrap();
-    let body = hyper::Body::from(req.body.clone());
-    let request = Request::builder().uri(uri).method(method).body(body)?;
-    dbg!(&request);
-    let http_client = hyper::client::Client::new();
-    let http_response = http_client.request(request).await?;
-    let resp_status_code = http_response.status().as_u16();
-    let resp_headers = http_response
-        .headers()
-        .into_iter()
-        .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().to_owned()))
-        .collect();
-    let resp_body = hyper::body::to_bytes(http_response.into_body()).await?;
+    debug!(payload = ?payload, "HTTP response payload");
     let response = lib::client::HttpResponse {
         uuid: req.uuid.clone(),
-        headers: resp_headers,
-        body: resp_body.to_vec(),
-        status_code: resp_status_code,
+        payload,
     };
     client
         .send(&lib::client::Message::HttpResponse(response))
         .await?;
     Ok(())
+}
+
+async fn send_http_request(
+    client: &Client,
+    req: &lib::server::HttpRequest,
+) -> std::result::Result<lib::client::HttpResponseData, lib::client::HttpResponseError> {
+    use hyper::{http::Request, Method};
+    use lib::client::HttpResponseError;
+
+    match client.http_port(&req.hostname).await {
+        None => Err(HttpResponseError::NotRegistered),
+        Some(port) => {
+            let uri = format!("http://localhost:{}{}", port, req.uri);
+            let method = Method::from_bytes(req.method.as_bytes())
+                .map_err(|e| HttpResponseError::InvalidMethod(e.to_string()))?;
+            let body = hyper::Body::from(req.body.clone());
+            let request = Request::builder()
+                .uri(uri)
+                .method(method)
+                .body(body)
+                .map_err(|e| HttpResponseError::Build(e.to_string()))?;
+            let http_client = hyper::client::Client::new();
+            let http_response = http_client
+                .request(request)
+                .await
+                .map_err(|e| HttpResponseError::Request(e.to_string()))?;
+            let resp_status_code = http_response.status().as_u16();
+            let resp_headers = http_response
+                .headers()
+                .into_iter()
+                .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().to_owned()))
+                .collect();
+            let resp_body = hyper::body::to_bytes(http_response.into_body())
+                .await
+                .map_err(|e| HttpResponseError::Read(e.to_string()))?;
+            Ok(lib::client::HttpResponseData {
+                headers: resp_headers,
+                body: resp_body.to_vec(),
+                status_code: resp_status_code,
+            })
+        }
+    }
 }
 
 // Function to handle messages we get (with a slight twist that Frame variant is visible
