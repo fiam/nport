@@ -26,7 +26,7 @@ use client::Client;
 
 use crate::error::Result;
 
-const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
+const SERVER: &str = "ws://127.0.0.1:3000/v1/connect";
 
 #[derive(clap::Parser)]
 struct Arguments {
@@ -76,13 +76,13 @@ async fn main() {
     loop {
         match client.recv().await {
             Ok(msg) => {
-                println!("got msg {:?}", msg);
+                tracing::trace!(msg=?msg, "server message");
                 if let Err(error) = dispatch_message(&client, msg).await {
-                    println!("error handling msg {:?}", error);
+                    tracing::error!(error=?error, "handling server message");
                 }
             }
             Err(error) => {
-                println!("recv error {:?}", error);
+                tracing::error!(error=?error, "error receiving data from server");
                 return;
             }
         }
@@ -105,7 +105,7 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
             }
         }
         server::Message::HttpRequest(req) => {
-            println!("got request {:?}", req);
+            tracing::debug!(request=?req, "incoming HTTP request");
             dispatch_message_http_request(client, &req).await?
         }
         server::Message::HttpClose(close) => {

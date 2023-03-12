@@ -16,7 +16,7 @@ use liblocalport as lib;
 
 use crate::error::{Error, Result};
 
-const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
+const SERVER: &str = "ws://127.0.0.1:3000/v1/connect";
 
 struct Connection {
     sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
@@ -38,7 +38,7 @@ impl Client {
 
     pub async fn connect(&self) -> Result<()> {
         let (stream, response) = connect_async(SERVER).await?;
-        println!("server response {:?}", response);
+        tracing::debug!(response=?response, "connected to server");
         let (sender, receiver) = stream.split();
         let connection = Connection {
             sender: Arc::new(RwLock::new(sender)),

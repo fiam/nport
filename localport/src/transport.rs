@@ -7,7 +7,6 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
-use tracing;
 
 use liblocalport as lib;
 
