@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::Result;
@@ -8,6 +9,7 @@ use futures::stream::SplitStream;
 use futures::SinkExt;
 use futures::StreamExt;
 use tokio::sync::oneshot::{Receiver, Sender};
+use tokio::sync::RwLock;
 use tokio::sync::{oneshot, Mutex};
 
 use liblocalport as lib;
@@ -25,7 +27,7 @@ pub enum Error {
 }
 
 pub struct Client {
-    hostname: String,
+    hostnames: RwLock<HashSet<String>>,
     ws_sender: Mutex<SplitSink<WebSocket, Message>>,
     ws_receiver: Mutex<SplitStream<WebSocket>>,
     requests: Mutex<HashMap<String, Sender<lib::client::HttpResponse>>>,
@@ -36,7 +38,7 @@ impl Client {
     pub fn new(socket: WebSocket, who: SocketAddr) -> Client {
         let (ws_sender, ws_receiver) = socket.split();
         Client {
-            hostname: "".to_owned(),
+            hostnames: RwLock::new(HashSet::new()),
             ws_sender: Mutex::new(ws_sender),
             ws_receiver: Mutex::new(ws_receiver),
             requests: Mutex::new(HashMap::new()),
@@ -44,19 +46,28 @@ impl Client {
         }
     }
 
-    pub fn is_open(&self) -> bool {
-        !self.hostname.is_empty()
+    pub fn who(&self) -> &SocketAddr {
+        &self.who
     }
 
-    pub fn set_hostname(&mut self, hostname: &str) {
-        self.hostname = hostname.to_owned();
+    pub async fn add_http_hostname(&self, hostname: &str) -> bool {
+        self.hostnames.write().await.insert(hostname.to_owned())
     }
 
-    pub fn hostname(&self) -> &str {
-        &self.hostname
+    pub async fn remove_http_hostname(&self, hostname: &str) -> bool {
+        self.hostnames.write().await.remove(hostname)
     }
 
-    pub async fn register(&self, id: &str) -> Receiver<lib::client::HttpResponse> {
+    pub async fn http_hostnames(&self) -> Vec<String> {
+        let result: Vec<String> = self.hostnames.read().await.iter().cloned().collect();
+        result
+    }
+
+    pub async fn has_http_hostname(&self, hostname: &str) -> bool {
+        self.hostnames.read().await.contains(hostname)
+    }
+
+    pub async fn register_http_request(&self, id: &str) -> Receiver<lib::client::HttpResponse> {
         let (tx, rx) = oneshot::channel::<lib::client::HttpResponse>();
         self.requests.lock().await.insert(id.to_string(), tx);
         rx

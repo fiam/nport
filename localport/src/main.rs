@@ -17,7 +17,6 @@ mod error;
 mod transport;
 
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
 use tracing::debug;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -25,8 +24,7 @@ use liblocalport as lib;
 
 use client::Client;
 
-use crate::error::{Error, Result};
-use crate::transport::Transport;
+use crate::error::Result;
 
 const SERVER: &'static str = "ws://127.0.0.1:3000/v1/connect";
 
@@ -109,6 +107,13 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
         server::Message::HttpRequest(req) => {
             println!("got request {:?}", req);
             dispatch_message_http_request(client, &req).await?
+        }
+        server::Message::HttpClose(close) => {
+            if let Err(err) = client.http_deregister(&close).await {
+                tracing::error!(error=?err, "creating HTTP host");
+            } else {
+                tracing::info!(hostname = close.hostname, "HTTP host closed")
+            }
         }
     }
 

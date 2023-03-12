@@ -39,6 +39,18 @@ impl HttpOpen {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum HttpCloseResult {
+    Ok,
+    NotRegistered,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpClose {
+    pub hostname: String,
+    pub result: HttpCloseResult,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct HttpRequest {
     pub uuid: String,
     pub hostname: String,
@@ -53,6 +65,7 @@ pub struct HttpRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
     HttpOpen(HttpOpen),
+    HttpClose(HttpClose),
     HttpRequest(HttpRequest),
 }
 

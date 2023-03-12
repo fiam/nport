@@ -24,14 +24,14 @@ struct Connection {
 }
 
 pub struct Client {
-    http_connections: RwLock<HashMap<String, u16>>,
+    http_forwardings: RwLock<HashMap<String, u16>>,
     connection: RwLock<Option<Connection>>,
 }
 
 impl Client {
     pub fn new() -> Self {
         Self {
-            http_connections: RwLock::new(HashMap::new()),
+            http_forwardings: RwLock::new(HashMap::new()),
             connection: RwLock::new(None),
         }
     }
@@ -57,13 +57,26 @@ impl Client {
     }
 
     pub async fn http_register(&self, msg: &lib::server::HttpOpen) -> Result<()> {
-        let mut http_connections = self.http_connections.write().await;
-        http_connections.insert(msg.hostname.clone(), msg.local_port);
-        Ok(())
+        let hostname = msg.hostname.clone();
+        let mut http_forwardings = self.http_forwardings.write().await;
+        if http_forwardings.insert(hostname, msg.local_port).is_none() {
+            Err(Error::HttpHostnameAlreadyRegistered(msg.hostname.clone()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn http_deregister(&self, msg: &lib::server::HttpClose) -> Result<()> {
+        let mut http_forwardings = self.http_forwardings.write().await;
+        if http_forwardings.remove(&msg.hostname).is_none() {
+            Err(Error::HttpHostnameNotRegistered(msg.hostname.clone()))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn http_port(&self, hostname: &str) -> Option<u16> {
-        self.http_connections.read().await.get(hostname).copied()
+        self.http_forwardings.read().await.get(hostname).copied()
     }
 
     pub async fn tcp_open(&self, hostname: &str, port: u16, local_port: u16) -> Result<()> {

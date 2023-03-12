@@ -12,6 +12,11 @@ pub struct HttpOpen {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct HttpClose {
+    pub hostname: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub enum HttpResponseError {
     NotRegistered,
     InvalidMethod(String),
@@ -58,6 +63,7 @@ pub struct TcpOpen {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     HttpOpen(HttpOpen),
+    HttpClose(HttpClose),
     HttpResponse(HttpResponse),
     TcpOpen(TcpOpen),
 }
