@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow, time::Duration};
 
 use anyhow::Result;
 use axum::{
@@ -9,13 +9,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use tokio::{sync::oneshot::Receiver, time::timeout};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use liblocalport as lib;
 
-use crate::server::client::{self, Client};
-use crate::server::state::SharedState;
+use crate::server::client;
+use crate::server::{msghandlers, state::SharedState};
 
 const CLIENT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
@@ -32,7 +32,7 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
     loop {
         let request = client.recv().await;
         let result = match request {
-            Ok(message) => handle_message(&state, client.clone(), message).await,
+            Ok(message) => msghandlers::msg(&state, client.clone(), message).await,
             Err(error) => Err(error),
         };
         match result {
@@ -52,97 +52,6 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
 
     state.registry().deregister(client).await;
     debug!(who = ?who, "client disconnected");
-}
-
-async fn handle_message(
-    state: &SharedState,
-    client: Arc<Client>,
-    msg: lib::client::Message,
-) -> Result<ControlFlow<()>> {
-    use lib::client::Message;
-
-    match msg {
-        Message::HttpOpen(open) => {
-            return handle_message_http_open(state, client.clone(), open)
-                .await
-                .map(|_| ControlFlow::Continue(()))
-        }
-        Message::HttpClose(close) => {
-            return handle_message_http_close(state, client.clone(), close)
-                .await
-                .map(|_| ControlFlow::Continue(()))
-        }
-        Message::HttpResponse(response) => {
-            return handle_message_http_response(state, client.clone(), response)
-                .await
-                .map(|_| ControlFlow::Continue(()))
-        }
-        _ => {
-            error!(message = ?msg, "handled message type");
-        }
-    }
-    Ok(ControlFlow::Continue(()))
-}
-
-async fn handle_message_http_open(
-    state: &SharedState,
-    client: Arc<Client>,
-    open: lib::client::HttpOpen,
-) -> Result<()> {
-    use lib::server;
-
-    let hostname = if !open.hostname.is_empty() {
-        open.hostname
-    } else {
-        names::Generator::with_naming(names::Name::Numbered)
-            .next()
-            .unwrap()
-    };
-    if !state.registry().claim_http_hostname(&hostname).await {
-        return client
-            .send(&server::Message::HttpOpen(server::HttpOpen::failed(
-                server::HttpOpenResult::InUse,
-            )))
-            .await;
-    }
-    tracing::debug!(hostname, "HTTP forwarding opened");
-    client.add_http_hostname(&hostname).await;
-    return client
-        .send(&server::Message::HttpOpen(server::HttpOpen::ok(
-            &hostname,
-            open.local_port,
-        )))
-        .await;
-}
-
-async fn handle_message_http_close(
-    state: &SharedState,
-    client: Arc<Client>,
-    close: lib::client::HttpClose,
-) -> Result<()> {
-    let hostname = &close.hostname;
-    let result = if !client.remove_http_hostname(hostname).await
-        || !state.registry().release_http_hostname(hostname).await
-    {
-        lib::server::HttpCloseResult::NotRegistered
-    } else {
-        tracing::debug!(hostname, "HTTP forwarding closed");
-        lib::server::HttpCloseResult::Ok
-    };
-    let response = lib::server::Message::HttpClose(lib::server::HttpClose {
-        hostname: hostname.to_owned(),
-        result,
-    });
-    return client.send(&response).await;
-}
-
-async fn handle_message_http_response(
-    _: &SharedState,
-    client: Arc<Client>,
-    response: lib::client::HttpResponse,
-) -> Result<()> {
-    client.send_response(response).await?;
-    Ok(())
 }
 
 pub async fn forward(

@@ -22,6 +22,7 @@ use state::SharedState;
 mod builder;
 mod client;
 mod handlers;
+mod msghandlers;
 mod registry;
 mod state;
 
