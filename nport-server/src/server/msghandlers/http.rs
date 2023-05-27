@@ -2,16 +2,14 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use liblocalport as lib;
-
 use crate::server::{client::Client, state::SharedState};
 
 pub async fn open(
     state: &SharedState,
     client: Arc<Client>,
-    open: lib::client::HttpOpen,
+    open: libnp::client::HttpOpen,
 ) -> Result<()> {
-    use lib::server;
+    use libnp::server;
 
     let hostname = if !open.hostname.is_empty() {
         open.hostname
@@ -43,7 +41,7 @@ pub async fn open(
 pub async fn close(
     state: &SharedState,
     client: Arc<Client>,
-    close: lib::client::HttpClose,
+    close: libnp::client::HttpClose,
 ) -> Result<()> {
     let hostname = &close.hostname;
     let result = if !state
@@ -51,12 +49,12 @@ pub async fn close(
         .release_http_hostname(&client, hostname)
         .await
     {
-        lib::server::HttpCloseResult::NotRegistered
+        libnp::server::HttpCloseResult::NotRegistered
     } else {
         tracing::debug!(hostname, "HTTP forwarding closed");
-        lib::server::HttpCloseResult::Ok
+        libnp::server::HttpCloseResult::Ok
     };
-    let response = lib::server::Message::HttpClosed(lib::server::HttpClosed {
+    let response = libnp::server::Message::HttpClosed(libnp::server::HttpClosed {
         hostname: hostname.to_owned(),
         result,
     });
@@ -66,7 +64,7 @@ pub async fn close(
 pub async fn response(
     _: &SharedState,
     client: Arc<Client>,
-    response: lib::client::HttpResponse,
+    response: libnp::client::HttpResponse,
 ) -> Result<()> {
     client.send_http_response(response).await?;
     Ok(())

@@ -1,17 +1,3 @@
-//! Based on tokio-tungstenite example websocket client, but with multiple
-//! concurrent websocket clients in one package
-//!
-//! This will connect to a server specified in the SERVER with N_CLIENTS
-//! concurrent connections, and then flood some test messages over websocket.
-//! This will also print whatever it gets into stdout.
-//!
-//! Note that this is not currently optimized for performance, especially around
-//! stdout mutex management. Rather it's intended to show an example of working with axum's
-//! websocket server and how the client-side and server-side code can be quite similar.
-//!
-//!
-//!
-
 mod client;
 mod error;
 mod transport;
@@ -21,8 +7,6 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::debug;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-use liblocalport as lib;
 
 use client::Client;
 
@@ -97,8 +81,8 @@ async fn main() {
     }
 }
 
-async fn dispatch_message(client: Arc<Client>, msg: lib::server::Message) -> Result<()> {
-    use lib::server;
+async fn dispatch_message(client: Arc<Client>, msg: libnp::server::Message) -> Result<()> {
+    use libnp::server;
 
     match msg {
         server::Message::HttpOpened(opened) => {
@@ -163,29 +147,29 @@ async fn dispatch_message(client: Arc<Client>, msg: lib::server::Message) -> Res
 
 async fn dispatch_message_http_request(
     client: Arc<Client>,
-    req: &lib::server::HttpRequest,
+    req: &libnp::server::HttpRequest,
 ) -> Result<()> {
     let payload = match send_http_request(client.clone(), req).await {
-        Ok(data) => lib::client::HttpResponsePayload::Data(data),
-        Err(error) => lib::client::HttpResponsePayload::Error(error),
+        Ok(data) => libnp::client::HttpResponsePayload::Data(data),
+        Err(error) => libnp::client::HttpResponsePayload::Error(error),
     };
     debug!(payload = ?payload, "HTTP response payload");
-    let response = lib::client::HttpResponse {
+    let response = libnp::client::HttpResponse {
         uuid: req.uuid.clone(),
         payload,
     };
     client
-        .send(&lib::client::Message::HttpResponse(response))
+        .send(&libnp::client::Message::HttpResponse(response))
         .await?;
     Ok(())
 }
 
 async fn send_http_request(
     client: Arc<Client>,
-    req: &lib::server::HttpRequest,
-) -> std::result::Result<lib::client::HttpResponseData, lib::client::HttpResponseError> {
+    req: &libnp::server::HttpRequest,
+) -> std::result::Result<libnp::client::HttpResponseData, libnp::client::HttpResponseError> {
     use hyper::{http::Request, Method};
-    use lib::client::HttpResponseError;
+    use libnp::client::HttpResponseError;
 
     let port = match client.http_port(&req.hostname).await {
         None => return Err(HttpResponseError::NotRegistered),
@@ -214,7 +198,7 @@ async fn send_http_request(
     let resp_body = hyper::body::to_bytes(http_response.into_body())
         .await
         .map_err(|e| HttpResponseError::Read(e.to_string()))?;
-    Ok(lib::client::HttpResponseData {
+    Ok(libnp::client::HttpResponseData {
         headers: resp_headers,
         body: resp_body.to_vec(),
         status_code: resp_status_code,
@@ -223,9 +207,9 @@ async fn send_http_request(
 
 async fn dispatch_message_port_connect(
     client: Arc<Client>,
-    connect: &lib::server::PortConnect,
+    connect: &libnp::server::PortConnect,
 ) -> Result<()> {
-    use lib::client::{Message, PortConnected, PortConnectedResult};
+    use libnp::client::{Message, PortConnected, PortConnectedResult};
 
     let client_copy = client.clone();
     let result = match client

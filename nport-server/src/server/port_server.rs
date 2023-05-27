@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use lib::{client::PortConnectedResult, common::PortMessage};
+use libnp::{client::PortConnectedResult, common::PortMessage};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -17,8 +17,6 @@ use tokio::{
     time::timeout,
 };
 use uuid::Uuid;
-
-use liblocalport as lib;
 
 use super::client::Client;
 
@@ -49,18 +47,18 @@ async fn serve_socket(
     mut socket: TcpStream,
     from: SocketAddr,
 ) -> ControlFlow<()> {
-    use lib::server::{Message, PortClose, PortConnect, PortReceive};
+    use libnp::server::{Message, PortClose, PortConnect, PortReceive};
 
     let uuid = Uuid::new_v4().to_string();
 
-    let (messages_writer, mut messages_reader) = mpsc::channel::<lib::common::PortMessage>(4);
+    let (messages_writer, mut messages_reader) = mpsc::channel::<libnp::common::PortMessage>(4);
 
     if let Some(client) = client.upgrade() {
         let rx = client.register_connect_request(&uuid).await;
 
         let connect = PortConnect {
             uuid: uuid.clone(),
-            protocol: lib::PortProtocol::Tcp,
+            protocol: libnp::PortProtocol::Tcp,
             hostname: hostname.to_string(),
             port,
             from: from.to_string(),

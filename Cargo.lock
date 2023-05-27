@@ -851,7 +851,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 
 [[package]]
-name = "liblocalport"
+name = "libnp"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -870,52 +870,6 @@ name = "linux-raw-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
-
-[[package]]
-name = "localport"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "clap",
- "futures-util",
- "hyper",
- "liblocalport",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "localport-server"
-version = "0.1.0"
-dependencies = [
- "acme-lib",
- "anyhow",
- "async-trait",
- "axum",
- "axum-server",
- "dotenv",
- "futures",
- "liblocalport",
- "names",
- "reqwest",
- "rustls 0.20.8",
- "serde",
- "serde_json",
- "thiserror",
- "time 0.3.19",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "tracing-test",
- "trust-dns-resolver",
- "uuid",
- "x509-parser",
-]
 
 [[package]]
 name = "lock_api"
@@ -1047,6 +1001,52 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "np"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "clap",
+ "futures-util",
+ "hyper",
+ "libnp",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "nport-server"
+version = "0.1.0"
+dependencies = [
+ "acme-lib",
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-server",
+ "dotenv",
+ "futures",
+ "libnp",
+ "names",
+ "reqwest",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time 0.3.19",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+ "trust-dns-resolver",
+ "uuid",
+ "x509-parser",
 ]
 
 [[package]]

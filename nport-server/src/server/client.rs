@@ -8,12 +8,10 @@ use futures::stream::SplitSink;
 use futures::stream::SplitStream;
 use futures::SinkExt;
 use futures::StreamExt;
+use libnp::common::PortMessage;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::sync::{oneshot, Mutex};
-
-use lib::common::PortMessage;
-use liblocalport as lib;
 
 use super::port_server;
 
@@ -37,8 +35,8 @@ pub struct Client {
     hostnames: RwLock<HashSet<String>>,
     ws_sender: Mutex<SplitSink<WebSocket, Message>>,
     ws_receiver: Mutex<SplitStream<WebSocket>>,
-    http_requests: Mutex<HashMap<String, oneshot::Sender<lib::client::HttpResponse>>>,
-    connect_requests: Mutex<HashMap<String, oneshot::Sender<lib::client::PortConnected>>>,
+    http_requests: Mutex<HashMap<String, oneshot::Sender<libnp::client::HttpResponse>>>,
+    connect_requests: Mutex<HashMap<String, oneshot::Sender<libnp::client::PortConnected>>>,
     open_ports: Mutex<Vec<port_server::Port>>,
     port_writers: RwLock<HashMap<String, mpsc::Sender<PortMessage>>>,
     who: SocketAddr,
@@ -83,13 +81,13 @@ impl Client {
     pub async fn register_http_request(
         &self,
         id: &str,
-    ) -> oneshot::Receiver<lib::client::HttpResponse> {
-        let (tx, rx) = oneshot::channel::<lib::client::HttpResponse>();
+    ) -> oneshot::Receiver<libnp::client::HttpResponse> {
+        let (tx, rx) = oneshot::channel::<libnp::client::HttpResponse>();
         self.http_requests.lock().await.insert(id.to_string(), tx);
         rx
     }
 
-    pub async fn send_http_response(&self, response: lib::client::HttpResponse) -> Result<()> {
+    pub async fn send_http_response(&self, response: libnp::client::HttpResponse) -> Result<()> {
         let tx = self.http_requests.lock().await.remove(&response.uuid);
         match tx {
             Some(tx) => {
@@ -105,8 +103,8 @@ impl Client {
     pub async fn register_connect_request(
         &self,
         id: &str,
-    ) -> oneshot::Receiver<lib::client::PortConnected> {
-        let (tx, rx) = oneshot::channel::<lib::client::PortConnected>();
+    ) -> oneshot::Receiver<libnp::client::PortConnected> {
+        let (tx, rx) = oneshot::channel::<libnp::client::PortConnected>();
         self.connect_requests
             .lock()
             .await
@@ -116,7 +114,7 @@ impl Client {
 
     pub async fn send_connected_response(
         &self,
-        connected: lib::client::PortConnected,
+        connected: libnp::client::PortConnected,
     ) -> Result<()> {
         let tx = self.connect_requests.lock().await.remove(&connected.uuid);
         match tx {
@@ -179,23 +177,23 @@ impl Client {
         Ok(())
     }
 
-    pub async fn port_receive(&self, msg: &lib::client::PortReceive) -> Result<()> {
+    pub async fn port_receive(&self, msg: &libnp::client::PortReceive) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Data(msg.data.clone()))
             .await
     }
 
-    pub async fn port_close(&self, msg: &lib::client::PortClose) -> Result<()> {
+    pub async fn port_close(&self, msg: &libnp::client::PortClose) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Close).await
     }
 
-    pub async fn recv(&self) -> Result<lib::client::Message> {
+    pub async fn recv(&self) -> Result<libnp::client::Message> {
         let data = self.recv_data().await?;
-        let request = lib::client::decode(&data)?;
+        let request = libnp::client::decode(&data)?;
         Ok(request)
     }
 
-    pub async fn send(&self, resp: &lib::server::Message) -> Result<()> {
-        let encoded = lib::server::encode(resp)?;
+    pub async fn send(&self, resp: &libnp::server::Message) -> Result<()> {
+        let encoded = libnp::server::encode(resp)?;
         let message = Message::Binary(encoded);
         let mut sender = self.ws_sender.lock().await;
         sender.send(message).await?;

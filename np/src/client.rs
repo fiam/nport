@@ -6,17 +6,15 @@ use futures_util::stream::SplitSink;
 use futures_util::stream::SplitStream;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use lib::common::PortMessage;
-use lib::PortProtocol;
-use tokio::sync::RwLock;
-
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use liblocalport as lib;
+use libnp::common::PortMessage;
+use libnp::PortProtocol;
 
 use crate::error::{Error, Result};
 
@@ -62,14 +60,14 @@ impl Client {
     }
 
     pub async fn http_open(&self, hostname: &str, local_port: u16) -> Result<()> {
-        let msg = lib::client::Message::HttpOpen(lib::client::HttpOpen {
+        let msg = libnp::client::Message::HttpOpen(libnp::client::HttpOpen {
             hostname: hostname.to_owned(),
             local_port,
         });
         self.send(&msg).await
     }
 
-    pub async fn http_register(&self, msg: &lib::server::HttpOpened) -> Result<()> {
+    pub async fn http_register(&self, msg: &libnp::server::HttpOpened) -> Result<()> {
         let hostname = msg.hostname.clone();
         let mut http_forwardings = self.http_forwardings.write().await;
         if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
@@ -79,7 +77,7 @@ impl Client {
         Err(Error::HttpHostnameAlreadyRegistered(hostname))
     }
 
-    pub async fn http_deregister(&self, msg: &lib::server::HttpClosed) -> Result<()> {
+    pub async fn http_deregister(&self, msg: &libnp::server::HttpClosed) -> Result<()> {
         let mut http_forwardings = self.http_forwardings.write().await;
         if let Entry::Occupied(entry) = http_forwardings.entry(msg.hostname.clone()) {
             entry.remove();
@@ -104,7 +102,7 @@ impl Client {
         port: u16,
         local_port: u16,
     ) -> Result<()> {
-        let msg = lib::client::Message::PortOpen(lib::client::PortOpen {
+        let msg = libnp::client::Message::PortOpen(libnp::client::PortOpen {
             protocol,
             hostname: hostname.to_owned(),
             port,
@@ -113,7 +111,7 @@ impl Client {
         self.send(&msg).await
     }
 
-    pub async fn port_register(&self, msg: &lib::server::PortOpened) -> Result<()> {
+    pub async fn port_register(&self, msg: &libnp::server::PortOpened) -> Result<()> {
         let origin = msg.origin();
         let mut port_forwardings = self.port_forwardings.write().await;
         if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
@@ -145,7 +143,11 @@ impl Client {
         Ok(())
     }
 
-    pub async fn port_connect<F, Future>(&self, msg: &lib::server::PortConnect, f: F) -> Result<()>
+    pub async fn port_connect<F, Future>(
+        &self,
+        msg: &libnp::server::PortConnect,
+        f: F,
+    ) -> Result<()>
     where
         F: FnOnce(String, String) -> Future,
         Future: std::future::Future<Output = Result<()>>,
@@ -171,20 +173,20 @@ impl Client {
         Ok(())
     }
 
-    pub async fn port_receive(&self, msg: &lib::server::PortReceive) -> Result<()> {
+    pub async fn port_receive(&self, msg: &libnp::server::PortReceive) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Data(msg.data.clone()))
             .await
     }
 
-    pub async fn port_close(&self, msg: &lib::server::PortClose) -> Result<()> {
+    pub async fn port_close(&self, msg: &libnp::server::PortClose) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Close).await
     }
 
-    pub async fn send(&self, msg: &lib::client::Message) -> Result<()> {
+    pub async fn send(&self, msg: &libnp::client::Message) -> Result<()> {
         let connection = self.connection.read().await;
         match connection.as_ref() {
             Some(connection) => {
-                let encoded = lib::client::encode(msg)?;
+                let encoded = libnp::client::encode(msg)?;
                 let encoded_msg = Message::Binary(encoded);
                 let mut sender = connection.sender.write().await;
                 Ok(sender.send(encoded_msg).await?)
@@ -193,14 +195,14 @@ impl Client {
         }
     }
 
-    pub async fn recv(&self) -> Result<lib::server::Message> {
+    pub async fn recv(&self) -> Result<libnp::server::Message> {
         let connection = self.connection.read().await;
         match connection.as_ref() {
             Some(connection) => {
                 let mut receiver = connection.receiver.write().await;
                 let received = receiver.next().await.ok_or(Error::Disconnected)??;
                 match received {
-                    Message::Binary(data) => Ok(lib::server::decode(&data)?),
+                    Message::Binary(data) => Ok(libnp::server::decode(&data)?),
                     _ => Err(Error::InvalidMessageType),
                 }
             }

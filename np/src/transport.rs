@@ -8,18 +8,16 @@ use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 
-use liblocalport as lib;
-
 use crate::error::{Error, Result};
 
 #[async_trait]
 pub trait Sender: Send {
-    async fn send(&mut self, msg: &lib::client::Message) -> Result<()>;
+    async fn send(&mut self, msg: &libnp::client::Message) -> Result<()>;
 }
 
 #[async_trait]
 pub trait Receiver: Send {
-    async fn recv(&mut self) -> Result<lib::server::Message>;
+    async fn recv(&mut self) -> Result<libnp::server::Message>;
 }
 
 #[async_trait]
@@ -77,8 +75,8 @@ struct WebSocketSender {
 
 #[async_trait]
 impl Sender for WebSocketSender {
-    async fn send(&mut self, msg: &lib::client::Message) -> Result<()> {
-        let encoded = lib::client::encode(msg)?;
+    async fn send(&mut self, msg: &libnp::client::Message) -> Result<()> {
+        let encoded = libnp::client::encode(msg)?;
         return Ok(self.sender_stream.send(Message::Binary(encoded)).await?);
     }
 }
@@ -89,14 +87,14 @@ struct WebSocketReceiver {
 
 #[async_trait]
 impl Receiver for WebSocketReceiver {
-    async fn recv(&mut self) -> Result<lib::server::Message> {
+    async fn recv(&mut self) -> Result<libnp::server::Message> {
         let received = self
             .receiver_stream
             .next()
             .await
             .ok_or(Error::Disconnected)??;
         match received {
-            Message::Binary(data) => Ok(lib::server::decode(&data)?),
+            Message::Binary(data) => Ok(libnp::server::decode(&data)?),
             _ => Err(Error::InvalidMessageType),
         }
     }

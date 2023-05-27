@@ -12,8 +12,6 @@ use tokio::{sync::oneshot::Receiver, time::timeout};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use liblocalport as lib;
-
 use crate::server::client;
 use crate::server::{msghandlers, state::SharedState};
 
@@ -97,11 +95,11 @@ pub async fn forward(
             };
             debug!(response.uuid, "HTTP response");
             match response.payload {
-                lib::client::HttpResponsePayload::Error(error) => {
+                libnp::client::HttpResponsePayload::Error(error) => {
                     info!(error = ?error, "error response");
                     StatusCode::INTERNAL_SERVER_ERROR.into_response()
                 }
-                lib::client::HttpResponsePayload::Data(data) => {
+                libnp::client::HttpResponsePayload::Data(data) => {
                     let header_map = data
                         .headers
                         .into_iter()
@@ -154,7 +152,7 @@ async fn enqueue_request(
     original_uri: String,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Receiver<lib::client::HttpResponse>> {
+) -> Result<Receiver<libnp::client::HttpResponse>> {
     let handler = state.registry().get_by_http_hostname(hostname).await;
     match handler {
         Some(handler) => {
@@ -169,7 +167,7 @@ async fn enqueue_request(
                 })
                 .collect::<HashMap<String, Vec<u8>>>();
             let rx = handler.register_http_request(&uuid).await;
-            let request = lib::server::HttpRequest {
+            let request = libnp::server::HttpRequest {
                 uuid,
                 hostname: hostname.to_string(),
                 addr: addr.to_string(),
@@ -181,7 +179,7 @@ async fn enqueue_request(
             };
 
             handler
-                .send(&lib::server::Message::HttpRequest(request))
+                .send(&libnp::server::Message::HttpRequest(request))
                 .await?;
 
             Ok(rx)

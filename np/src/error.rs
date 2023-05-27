@@ -11,7 +11,7 @@ pub enum Error {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
     #[error("error in library {0}")]
-    Lib(#[from] liblocalport::Error),
+    Lib(#[from] libnp::Error),
     #[error("http client error {0}")]
     Hyper(#[from] hyper::Error),
     #[error("http client error {0}")]

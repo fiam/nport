@@ -2,16 +2,14 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use liblocalport as lib;
-
 use crate::server::{client::Client, port_server, state::SharedState};
 
 pub async fn open(
     state: &SharedState,
     client: Arc<Client>,
-    open: lib::client::PortOpen,
+    open: libnp::client::PortOpen,
 ) -> Result<()> {
-    use lib::server;
+    use libnp::server;
     // XXX: The hostname used for the port is always the server hostname for now
     let result = match port_server::server(client.clone(), state.hostname(), open.port).await {
         Ok(port) => {
@@ -41,7 +39,7 @@ pub async fn open(
 pub async fn connected(
     _state: &SharedState,
     client: Arc<Client>,
-    connected: lib::client::PortConnected,
+    connected: libnp::client::PortConnected,
 ) -> Result<()> {
     client.send_connected_response(connected).await?;
     Ok(())
@@ -50,7 +48,7 @@ pub async fn connected(
 pub async fn receive(
     _state: &SharedState,
     client: Arc<Client>,
-    receive: lib::client::PortReceive,
+    receive: libnp::client::PortReceive,
 ) -> Result<()> {
     client.port_receive(&receive).await?;
     Ok(())
@@ -59,7 +57,7 @@ pub async fn receive(
 pub async fn close(
     _state: &SharedState,
     client: Arc<Client>,
-    close: lib::client::PortClose,
+    close: libnp::client::PortClose,
 ) -> Result<()> {
     client.port_close(&close).await?;
     Ok(())

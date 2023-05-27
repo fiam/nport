@@ -1,12 +1,12 @@
 [package]
-name = "localport-server"
+name = "nport-server"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-liblocalport = { path = "../liblocalport" }
+libnp = { path = "../libnp" }
 axum = { version = "0.6.4", features = ["ws", "headers"] }
 futures = "0.3.25"
 names = { version = "0.14.0", default-features = false }

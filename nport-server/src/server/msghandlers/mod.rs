@@ -2,7 +2,7 @@ use std::{ops::ControlFlow, sync::Arc};
 
 use anyhow::Result;
 
-use liblocalport as lib;
+use libnp::client::Message;
 
 use super::{client::Client, state::SharedState};
 
@@ -12,10 +12,8 @@ mod port;
 pub async fn msg(
     state: &SharedState,
     client: Arc<Client>,
-    msg: lib::client::Message,
+    msg: Message,
 ) -> Result<ControlFlow<()>> {
-    use lib::client::Message;
-
     match msg {
         /* HTTP */
         Message::HttpOpen(open) => http::open(state, client.clone(), open)

@@ -1,7 +1,3 @@
 [workspace]
 
-members = [
-    "liblocalport",
-    "localport",
-    "localport-server",
-]
+members = ["libnp", "np", "nport-server"]
