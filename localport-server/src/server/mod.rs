@@ -23,6 +23,7 @@ mod builder;
 mod client;
 mod handlers;
 mod msghandlers;
+mod port_server;
 mod registry;
 mod state;
 

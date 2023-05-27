@@ -8,6 +8,8 @@ pub enum Error {
     Disconnected,
     #[error("websocket error {0}")]
     Tungstenite(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
     #[error("error in library {0}")]
     Lib(#[from] liblocalport::Error),
     #[error("http client error {0}")]
@@ -18,6 +20,14 @@ pub enum Error {
     HttpHostnameAlreadyRegistered(String),
     #[error("HTTP hostname {0} not registered")]
     HttpHostnameNotRegistered(String),
+    #[error("Port origin {0} already registered")]
+    PortOriginAlreadyRegistered(String),
+    #[error("Port origin {0} not registered")]
+    PortOriginNotRegistered(String),
+    #[error("Port ID {0} already registered")]
+    PortIDAlreadyRegistered(String),
+    #[error("Port ID {0} not registered")]
+    PortIDNotRegistered(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -20,21 +20,24 @@ pub async fn open(
             .next()
             .unwrap()
     };
-    if !state.registry().claim_http_hostname(&hostname).await {
+    if !state
+        .registry()
+        .claim_http_hostname(&client, &hostname)
+        .await
+    {
         return client
-            .send(&server::Message::HttpOpen(server::HttpOpen::failed(
+            .send(&server::Message::HttpOpened(server::HttpOpened::failed(
                 server::HttpOpenResult::InUse,
             )))
             .await;
     }
     tracing::debug!(hostname, "HTTP forwarding opened");
-    client.add_http_hostname(&hostname).await;
-    return client
-        .send(&server::Message::HttpOpen(server::HttpOpen::ok(
+    client
+        .send(&server::Message::HttpOpened(server::HttpOpened::ok(
             &hostname,
             open.local_port,
         )))
-        .await;
+        .await
 }
 
 pub async fn close(
@@ -43,19 +46,21 @@ pub async fn close(
     close: lib::client::HttpClose,
 ) -> Result<()> {
     let hostname = &close.hostname;
-    let result = if !client.remove_http_hostname(hostname).await
-        || !state.registry().release_http_hostname(hostname).await
+    let result = if !state
+        .registry()
+        .release_http_hostname(&client, hostname)
+        .await
     {
         lib::server::HttpCloseResult::NotRegistered
     } else {
         tracing::debug!(hostname, "HTTP forwarding closed");
         lib::server::HttpCloseResult::Ok
     };
-    let response = lib::server::Message::HttpClose(lib::server::HttpClose {
+    let response = lib::server::Message::HttpClosed(lib::server::HttpClosed {
         hostname: hostname.to_owned(),
         result,
     });
-    return client.send(&response).await;
+    client.send(&response).await
 }
 
 pub async fn response(
@@ -63,6 +68,6 @@ pub async fn response(
     client: Arc<Client>,
     response: lib::client::HttpResponse,
 ) -> Result<()> {
-    client.send_response(response).await?;
+    client.send_http_response(response).await?;
     Ok(())
 }

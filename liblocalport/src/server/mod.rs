@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::error::Result;
+use crate::{error::Result, PortProtocol};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum HttpOpenResult {
@@ -13,13 +13,13 @@ pub enum HttpOpenResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct HttpOpen {
+pub struct HttpOpened {
     pub hostname: String,
     pub local_port: u16,
     pub result: HttpOpenResult,
 }
 
-impl HttpOpen {
+impl HttpOpened {
     pub fn ok(hostname: &str, local_port: u16) -> Self {
         Self {
             hostname: hostname.to_owned(),
@@ -45,7 +45,7 @@ pub enum HttpCloseResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct HttpClose {
+pub struct HttpClosed {
     pub hostname: String,
     pub result: HttpCloseResult,
 }
@@ -62,11 +62,66 @@ pub struct HttpRequest {
     pub body: Vec<u8>,
 }
 
+fn port_origin(protocol: PortProtocol, hostname: &str, port: u16) -> String {
+    format!("{protocol}:{hostname}:{port}")
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub enum PortOpenResult {
+    Ok,
+    InUse,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PortOpened {
+    pub protocol: PortProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub local_port: u16,
+    pub result: PortOpenResult,
+}
+
+impl PortOpened {
+    pub fn origin(&self) -> String {
+        port_origin(self.protocol, &self.hostname, self.port)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PortConnect {
+    pub uuid: String,
+    pub protocol: PortProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub from: String,
+}
+
+impl PortConnect {
+    pub fn origin(&self) -> String {
+        port_origin(self.protocol, &self.hostname, self.port)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PortReceive {
+    pub uuid: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PortClose {
+    pub uuid: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    HttpOpen(HttpOpen),
-    HttpClose(HttpClose),
+    HttpOpened(HttpOpened),
+    HttpClosed(HttpClosed),
     HttpRequest(HttpRequest),
+    PortOpened(PortOpened),
+    PortConnect(PortConnect),
+    PortReceive(PortReceive),
+    PortClose(PortClose),
 }
 
 pub fn decode(data: &[u8]) -> Result<Message> {

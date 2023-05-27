@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::error::Result;
+use crate::{error::Result, PortProtocol};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HttpOpen {
@@ -54,10 +54,34 @@ impl HttpResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TcpOpen {
+pub struct PortOpen {
+    pub protocol: PortProtocol,
     pub hostname: String,
     pub port: u16,
     pub local_port: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum PortConnectedResult {
+    Ok,
+    Error(String),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PortConnected {
+    pub uuid: String,
+    pub result: PortConnectedResult,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PortReceive {
+    pub uuid: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PortClose {
+    pub uuid: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -65,7 +89,10 @@ pub enum Message {
     HttpOpen(HttpOpen),
     HttpClose(HttpClose),
     HttpResponse(HttpResponse),
-    TcpOpen(TcpOpen),
+    PortOpen(PortOpen),
+    PortConnected(PortConnected),
+    PortReceive(PortReceive),
+    PortClose(PortClose),
 }
 
 pub fn decode(data: &[u8]) -> Result<Message> {

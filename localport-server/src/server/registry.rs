@@ -36,15 +36,25 @@ impl Registry {
         }
     }
 
-    pub async fn claim_http_hostname(&self, hostname: &str) -> bool {
-        self.claimed_http_hostnames
+    pub async fn claim_http_hostname(&self, client: &Client, hostname: &str) -> bool {
+        if !self
+            .claimed_http_hostnames
             .write()
             .await
             .insert(hostname.to_owned())
+        {
+            return false;
+        }
+        client.add_http_hostname(hostname).await;
+        true
     }
 
-    pub async fn release_http_hostname(&self, hostname: &str) -> bool {
-        self.claimed_http_hostnames.write().await.remove(hostname)
+    pub async fn release_http_hostname(&self, client: &Client, hostname: &str) -> bool {
+        if !client.remove_http_hostname(hostname).await {
+            return false;
+        }
+        self.claimed_http_hostnames.write().await.remove(hostname);
+        true
     }
 
     pub async fn get_by_http_hostname(&self, hostname: &str) -> Option<Arc<Client>> {

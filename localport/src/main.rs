@@ -16,6 +16,8 @@ mod client;
 mod error;
 mod transport;
 
+use std::sync::Arc;
+
 use clap::Parser;
 use tracing::debug;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -32,6 +34,8 @@ const SERVER: &str = "ws://127.0.0.1:3000/v1/connect";
 struct Arguments {
     #[arg(long, short = 'H')]
     hostname: String,
+    #[arg(long, short = 'R')]
+    remote_port: u16,
     #[command(subcommand)]
     command: Command,
 }
@@ -51,7 +55,7 @@ async fn main() {
 
     let args = Arguments::parse();
 
-    let client = Client::new();
+    let client = Arc::new(Client::new());
 
     match client.connect().await {
         Ok(()) => {
@@ -65,7 +69,11 @@ async fn main() {
 
     let result = match args.command {
         Command::Http { port } => client.http_open(&args.hostname, port).await,
-        Command::Tcp { port } => client.tcp_open(&args.hostname, 0, port).await,
+        Command::Tcp { port } => {
+            client
+                .tcp_open(&args.hostname, args.remote_port, port)
+                .await
+        }
     };
 
     if let Err(error) = result {
@@ -77,7 +85,7 @@ async fn main() {
         match client.recv().await {
             Ok(msg) => {
                 tracing::trace!(msg=?msg, "server message");
-                if let Err(error) = dispatch_message(&client, msg).await {
+                if let Err(error) = dispatch_message(client.clone(), msg).await {
                     tracing::error!(error=?error, "handling server message");
                 }
             }
@@ -89,17 +97,17 @@ async fn main() {
     }
 }
 
-async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<()> {
+async fn dispatch_message(client: Arc<Client>, msg: lib::server::Message) -> Result<()> {
     use lib::server;
 
     match msg {
-        server::Message::HttpOpen(open) => {
-            if let Err(err) = client.http_register(&open).await {
+        server::Message::HttpOpened(opened) => {
+            if let Err(err) = client.http_register(&opened).await {
                 tracing::error!(error=?err, "creating HTTP host");
             } else {
                 tracing::info!(
-                    hostname = open.hostname,
-                    local_port = open.local_port,
+                    hostname = opened.hostname,
+                    local_port = opened.local_port,
                     "HTTP host created"
                 )
             }
@@ -108,11 +116,44 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
             tracing::debug!(request=?req, "incoming HTTP request");
             dispatch_message_http_request(client, &req).await?
         }
-        server::Message::HttpClose(close) => {
-            if let Err(err) = client.http_deregister(&close).await {
+        server::Message::HttpClosed(closed) => {
+            if let Err(err) = client.http_deregister(&closed).await {
                 tracing::error!(error=?err, "creating HTTP host");
             } else {
-                tracing::info!(hostname = close.hostname, "HTTP host closed")
+                tracing::info!(hostname = closed.hostname, "HTTP host closed")
+            }
+        }
+        server::Message::PortOpened(opened) => {
+            if let Err(err) = client.port_register(&opened).await {
+                tracing::error!(error=?err,origin=opened.origin(), local_port=opened.local_port, "registering port forwarding");
+            } else {
+                tracing::info!(
+                    origin = opened.origin(),
+                    local_port = opened.local_port,
+                    "port forwarding created"
+                )
+            }
+        }
+        server::Message::PortConnect(connect) => {
+            tracing::debug!(origin = connect.origin(), "port connect");
+            if let Err(err) = dispatch_message_port_connect(client, &connect).await {
+                tracing::error!(error=?err,origin=connect.origin(), "connecting to port");
+            }
+        }
+        server::Message::PortReceive(receive) => {
+            tracing::debug!(
+                uuid = receive.uuid,
+                len = receive.data.len(),
+                "received port data"
+            );
+            if let Err(err) = client.port_receive(&receive).await {
+                tracing::error!(error=?err,uuid=receive.uuid, "writing to port");
+            }
+        }
+        server::Message::PortClose(close) => {
+            tracing::debug!(uuid = close.uuid, "requested to close port");
+            if let Err(err) = client.port_close(&close).await {
+                tracing::error!(error=?err,uuid=close.uuid, "closing port");
             }
         }
     }
@@ -121,10 +162,10 @@ async fn dispatch_message(client: &Client, msg: lib::server::Message) -> Result<
 }
 
 async fn dispatch_message_http_request(
-    client: &Client,
+    client: Arc<Client>,
     req: &lib::server::HttpRequest,
 ) -> Result<()> {
-    let payload = match send_http_request(client, req).await {
+    let payload = match send_http_request(client.clone(), req).await {
         Ok(data) => lib::client::HttpResponsePayload::Data(data),
         Err(error) => lib::client::HttpResponsePayload::Error(error),
     };
@@ -140,82 +181,66 @@ async fn dispatch_message_http_request(
 }
 
 async fn send_http_request(
-    client: &Client,
+    client: Arc<Client>,
     req: &lib::server::HttpRequest,
 ) -> std::result::Result<lib::client::HttpResponseData, lib::client::HttpResponseError> {
     use hyper::{http::Request, Method};
     use lib::client::HttpResponseError;
 
-    match client.http_port(&req.hostname).await {
-        None => Err(HttpResponseError::NotRegistered),
-        Some(port) => {
-            let uri = format!("http://localhost:{}{}", port, req.uri);
-            let method = Method::from_bytes(req.method.as_bytes())
-                .map_err(|e| HttpResponseError::InvalidMethod(e.to_string()))?;
-            let body = hyper::Body::from(req.body.clone());
-            let request = Request::builder()
-                .uri(uri)
-                .method(method)
-                .body(body)
-                .map_err(|e| HttpResponseError::Build(e.to_string()))?;
-            let http_client = hyper::client::Client::new();
-            let http_response = http_client
-                .request(request)
-                .await
-                .map_err(|e| HttpResponseError::Request(e.to_string()))?;
-            let resp_status_code = http_response.status().as_u16();
-            let resp_headers = http_response
-                .headers()
-                .into_iter()
-                .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().to_owned()))
-                .collect();
-            let resp_body = hyper::body::to_bytes(http_response.into_body())
-                .await
-                .map_err(|e| HttpResponseError::Read(e.to_string()))?;
-            Ok(lib::client::HttpResponseData {
-                headers: resp_headers,
-                body: resp_body.to_vec(),
-                status_code: resp_status_code,
-            })
-        }
-    }
+    let port = match client.http_port(&req.hostname).await {
+        None => return Err(HttpResponseError::NotRegistered),
+        Some(port) => port,
+    };
+    let uri = format!("http://localhost:{}{}", port, req.uri);
+    let method = Method::from_bytes(req.method.as_bytes())
+        .map_err(|e| HttpResponseError::InvalidMethod(e.to_string()))?;
+    let body = hyper::Body::from(req.body.clone());
+    let request = Request::builder()
+        .uri(uri)
+        .method(method)
+        .body(body)
+        .map_err(|e| HttpResponseError::Build(e.to_string()))?;
+    let http_client = hyper::client::Client::new();
+    let http_response = http_client
+        .request(request)
+        .await
+        .map_err(|e| HttpResponseError::Request(e.to_string()))?;
+    let resp_status_code = http_response.status().as_u16();
+    let resp_headers = http_response
+        .headers()
+        .into_iter()
+        .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().to_owned()))
+        .collect();
+    let resp_body = hyper::body::to_bytes(http_response.into_body())
+        .await
+        .map_err(|e| HttpResponseError::Read(e.to_string()))?;
+    Ok(lib::client::HttpResponseData {
+        headers: resp_headers,
+        body: resp_body.to_vec(),
+        status_code: resp_status_code,
+    })
 }
 
-// Function to handle messages we get (with a slight twist that Frame variant is visible
-// since we are working with the underlying tungstenite library directly without axum here).
-// fn process_message(msg: Message, who: usize) -> ControlFlow<(), ()> {
-//     match msg {
-//         Message::Text(t) => {
-//             println!(">>> {} got str: {:?}", who, t);
-//         }
-//         Message::Binary(d) => {
-//             println!(">>> {} got {} bytes: {:?}", who, d.len(), d);
-//         }
-//         Message::Close(c) => {
-//             if let Some(cf) = c {
-//                 println!(
-//                     ">>> {} got close with code {} and reason `{}`",
-//                     who, cf.code, cf.reason
-//                 );
-//             } else {
-//                 println!(">>> {} somehow got close message without CloseFrame", who);
-//             }
-//             return ControlFlow::Break(());
-//         }
+async fn dispatch_message_port_connect(
+    client: Arc<Client>,
+    connect: &lib::server::PortConnect,
+) -> Result<()> {
+    use lib::client::{Message, PortConnected, PortConnectedResult};
 
-//         Message::Pong(v) => {
-//             println!(">>> {} got pong with {:?}", who, v);
-//         }
-//         // Just as with axum server, the underlying tungstenite websocket library
-//         // will handle Ping for you automagically by replying with Pong and copying the
-//         // v according to spec. But if you need the contents of the pings you can see them here.
-//         Message::Ping(v) => {
-//             println!(">>> {} got ping with {:?}", who, v);
-//         }
-
-//         Message::Frame(_) => {
-//             unreachable!("This is never supposed to happen")
-//         }
-//     }
-//     ControlFlow::Continue(())
-// }
+    let client_copy = client.clone();
+    let result = match client
+        .port_connect(connect, |uuid, addr| async move {
+            crate::client::port::start(client_copy, &uuid, &addr).await
+        })
+        .await
+    {
+        Ok(()) => PortConnectedResult::Ok,
+        Err(error) => PortConnectedResult::Error(error.to_string()),
+    };
+    client
+        .send(&Message::PortConnected(PortConnected {
+            uuid: connect.uuid.clone(),
+            result,
+        }))
+        .await
+}
