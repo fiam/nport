@@ -20,6 +20,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --workspace
 
   fmt:
     name: Rustfmt
@@ -52,11 +53,25 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
           name: Clippy Output
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+
   success:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     name: success
-    needs: ["check", "fmt", "clippy"]
+    needs: ["check", "fmt", "clippy", "test"]
     steps:
       - run: exit 1
         if: >-
