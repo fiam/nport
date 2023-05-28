@@ -1,5 +1,6 @@
 mod client;
 mod error;
+mod settings;
 mod transport;
 
 use std::sync::Arc;
@@ -12,22 +13,20 @@ use client::Client;
 
 use crate::error::Result;
 
-const SERVER: &str = "ws://127.0.0.1:3000/v1/connect";
-
 #[derive(clap::Parser)]
 struct Arguments {
     #[arg(long, short = 'H')]
-    hostname: String,
+    hostname: Option<String>,
     #[arg(long, short = 'R')]
-    remote_port: u16,
+    remote_port: Option<u16>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(clap::Subcommand)]
 enum Command {
-    Http { port: u16 },
-    Tcp { port: u16 },
+    Http { local_port: u16 },
+    Tcp { local_port: u16 },
 }
 
 #[tokio::main]
@@ -39,30 +38,71 @@ async fn main() {
 
     let args = Arguments::parse();
 
+    let s = match settings::Settings::new() {
+        Ok(settings) => settings,
+        Err(error) => {
+            tracing::error!(error=?error, "parsing configuration");
+            return;
+        }
+    };
+
+    let mut tunnels = s.tunnels.unwrap_or(Vec::new());
+    if let Some(command) = args.command {
+        match command {
+            Command::Http { local_port } => {
+                tunnels.push(settings::Tunnel::Http(settings::HttpTunnel {
+                    hostname: args.hostname,
+                    local_port,
+                }))
+            }
+            Command::Tcp { local_port } => {
+                tunnels.push(settings::Tunnel::Tcp(settings::TcpTunnel {
+                    hostname: args.hostname,
+                    local_port,
+                    remote_port: args.remote_port,
+                }))
+            }
+        }
+    }
+
+    if tunnels.is_empty() {
+        tracing::error!("no tunnels to run");
+        return;
+    }
+
     let client = Arc::new(Client::new());
 
-    match client.connect().await {
+    match client.connect(&s.server.hostname).await {
         Ok(()) => {
-            tracing::info!(server = SERVER, "connected");
+            tracing::info!(server = s.server.hostname, "connected");
         }
         Err(error) => {
-            tracing::error!(error=?error, "can't connect to server");
+            tracing::error!(error=?error, server=s.server.hostname, "can't connect to server");
             return;
         }
     }
 
-    let result = match args.command {
-        Command::Http { port } => client.http_open(&args.hostname, port).await,
-        Command::Tcp { port } => {
-            client
-                .tcp_open(&args.hostname, args.remote_port, port)
-                .await
+    for tunnel in tunnels {
+        let result = match tunnel {
+            settings::Tunnel::Http(http) => {
+                client
+                    .http_open(&http.hostname.unwrap_or_default(), http.local_port)
+                    .await
+            }
+            settings::Tunnel::Tcp(tcp) => {
+                client
+                    .tcp_open(
+                        &tcp.hostname.unwrap_or_default(),
+                        tcp.remote_port.unwrap_or_default(),
+                        tcp.local_port,
+                    )
+                    .await
+            }
+        };
+        if let Err(error) = result {
+            tracing::error!(error=?error, "can't open connection");
+            return;
         }
-    };
-
-    if let Err(error) = result {
-        tracing::error!(error=?error, "can't open connection");
-        return;
     }
 
     loop {

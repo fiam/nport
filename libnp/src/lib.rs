@@ -1,7 +1,3 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
 pub mod client;
 pub mod common;
 pub mod error;
@@ -24,16 +20,5 @@ impl fmt::Display for PortProtocol {
             PortProtocol::Tcp => write!(f, "tcp"),
             //          PortProtocol::Udp => write!(f, "udp"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
     }
 }

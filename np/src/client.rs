@@ -18,8 +18,6 @@ use libnp::PortProtocol;
 
 use crate::error::{Error, Result};
 
-const SERVER: &str = "ws://127.0.0.1:3000/v1/connect";
-
 pub mod port;
 
 struct Connection {
@@ -47,8 +45,9 @@ impl Client {
         }
     }
 
-    pub async fn connect(&self) -> Result<()> {
-        let (stream, response) = connect_async(SERVER).await?;
+    pub async fn connect(&self, server: &str) -> Result<()> {
+        let server_url = format!("ws://{0}/v1/connect", server);
+        let (stream, response) = connect_async(server_url).await?;
         tracing::debug!(response=?response, "connected to server");
         let (sender, receiver) = stream.split();
         let connection = Connection {
