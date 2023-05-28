@@ -1,7 +1,6 @@
 mod client;
 mod error;
 mod settings;
-mod transport;
 
 use std::sync::Arc;
 
