@@ -19,7 +19,7 @@ thiserror = "1.0.38"
 async-trait = "0.1.64"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "std"] }
 tracing = "0.1.37"
-clap = { version = "4.1.4", features = ["derive"] }
+clap = { version = "4.3.0", features = ["derive"] }
 hyper = { version = "0.14.24", features = ["client", "http1", "http2"] }
 config = "0.13.3"
 serde = "1.0.163"
