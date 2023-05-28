@@ -8,62 +8,50 @@ name: CI
 
 jobs:
   check:
-    name: Check
+    name: Run CI checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Set up cargo cache
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Checkout sources
+        uses: actions/checkout@v3
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --workspace
+          components: rustfmt, clippy
 
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
+      - name: Formatting
+        uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Run check
+        uses: actions-rs/cargo@v1
         with:
-          toolchain: stable
-          components: clippy
-          override: true
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
-          name: Clippy Output
+          command: check
+          args: --workspace
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Clippy
+        uses: actions-rs/clippy-check@v1
         with:
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
+          args: --all-features
+
+      - name: Test
+        uses: actions-rs/cargo@v1
         with:
           command: test
 
@@ -71,7 +59,7 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     name: success
-    needs: ["check", "fmt", "clippy", "test"]
+    needs: ["check"]
     steps:
       - run: exit 1
         if: >-
