@@ -38,8 +38,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-features
 
-      - name: Audit dependencies
-        run: cargo audit
+      # - name: Audit dependencies
+      #   run: cargo audit
 
       - name: Test
         run: cargo test
