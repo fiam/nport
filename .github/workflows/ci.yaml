@@ -46,8 +46,9 @@ jobs:
           args: --workspace
 
       - name: Clippy
-        uses: actions-rs/clippy-check@v1
+        uses: actions-rs/cargo@v1
         with:
+          command: clippy
           args: --all-features
 
       - name: Test
