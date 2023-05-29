@@ -1,6 +1,6 @@
 use std::env;
 
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cert;
