@@ -2008,6 +2008,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tests"
+version = "0.1.0"
+dependencies = [
+ "np",
+ "nport-server",
+ "tokio",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"

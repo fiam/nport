@@ -1,0 +1,16 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+np = { path = "../np" }
+nport-server = { path = "../nport-server" }
+
+[[test]]
+name = "integration"
+path = "integration.rs"
+
+[dependencies]
+tokio = { version = "1.28.2", features = ["macros"] }

@@ -3,9 +3,6 @@ use std::env;
 use dotenvy::dotenv;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod cert;
-mod server;
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -14,7 +11,7 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let mut builder = server::Builder::default();
+    let mut builder = nport_server::server::Builder::default();
     if let Ok(val) = env::var("HTTP_PORT") {
         let port = val.parse::<u16>().expect("invalid HTTP port");
         builder = builder.http_port(port);
