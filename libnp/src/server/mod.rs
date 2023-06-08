@@ -8,8 +8,8 @@ use crate::{error::Result, PortProtocol};
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum HttpOpenResult {
     Ok,
-    AlreadyOpen,
     InUse,
+    Invalid,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

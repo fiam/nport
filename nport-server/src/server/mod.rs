@@ -22,6 +22,7 @@ use state::SharedState;
 mod builder;
 mod client;
 mod handlers;
+mod hostname;
 mod msghandlers;
 mod port_server;
 mod registry;
@@ -64,6 +65,7 @@ pub struct Server {
     https_port: u16,
     domain: String,
     cert_store: Option<Arc<cert::Store>>,
+    client_request_timeout_secs: u16,
 }
 
 impl Server {
@@ -86,6 +88,7 @@ impl Server {
             .with_state(state.clone());
 
         let forwarding_router = Router::new()
+            .route("/", any(handlers::forward))
             .route("/*path", any(handlers::forward))
             .with_state(state.clone());
 
@@ -169,7 +172,9 @@ impl Server {
         let state = Arc::new(AppState::new(
             self.http_port,
             self.https_port,
+            &self.domain,
             self.public_hostname(),
+            self.client_request_timeout_secs,
         ));
 
         let http = self.run_http(state.clone());

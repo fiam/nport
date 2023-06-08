@@ -8,14 +8,13 @@ use axum::{
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
+
 use tokio::{sync::oneshot::Receiver, time::timeout};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::server::client;
 use crate::server::{msghandlers, state::SharedState};
-
-const CLIENT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 pub async fn websocket(
     State(state): State<SharedState>,
@@ -67,7 +66,7 @@ pub async fn forward(
     };
 
     let rx = enqueue_request(
-        state,
+        state.clone(),
         &hostname,
         addr,
         method,
@@ -79,8 +78,8 @@ pub async fn forward(
 
     match rx {
         Ok(rx) => {
-            let response = match timeout(Duration::from_secs(CLIENT_REQUEST_TIMEOUT_SECS), rx).await
-            {
+            let response_timeout = Duration::from_secs(state.client_request_timeout_secs().into());
+            let response = match timeout(response_timeout, rx).await {
                 Ok(result) => match result {
                     Ok(response) => response,
                     Err(error) => {
@@ -97,7 +96,7 @@ pub async fn forward(
             match response.payload {
                 libnp::client::HttpResponsePayload::Error(error) => {
                     info!(error = ?error, "error response");
-                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    StatusCode::BAD_GATEWAY.into_response()
                 }
                 libnp::client::HttpResponsePayload::Data(data) => {
                     let header_map = data
@@ -184,7 +183,10 @@ async fn enqueue_request(
 
             Ok(rx)
         }
-        None => Err(client::Error::ClientNotFound.into()),
+        None => {
+            tracing::debug!(host = hostname, "no forwarding found");
+            Err(client::Error::ClientNotFound.into())
+        }
     }
 }
 

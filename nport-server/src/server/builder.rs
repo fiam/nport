@@ -6,6 +6,8 @@ use crate::cert::{CloudflareUpdater, Generator, Store};
 
 use super::Server;
 
+const DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS: u16 = 30;
+
 #[derive(Default)]
 pub struct Builder {
     http_port: u16,
@@ -17,6 +19,7 @@ pub struct Builder {
     acme_staging: bool,
     cloudflare_zone_id: String,
     cloudflare_api_token: String,
+    client_request_timeout_secs: u16,
 }
 
 impl Builder {
@@ -65,13 +68,24 @@ impl Builder {
         self
     }
 
+    pub fn client_request_timeout_secs(mut self, secs: u16) -> Self {
+        self.client_request_timeout_secs = secs;
+        self
+    }
+
     pub async fn server(self) -> anyhow::Result<Server> {
         let cert_store = self.cert_store().await?;
+        let client_request_timeout_secs = if self.client_request_timeout_secs > 0 {
+            self.client_request_timeout_secs
+        } else {
+            DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS
+        };
         Ok(Server {
             http_port: self.http_port,
             https_port: self.https_port,
             domain: self.domain,
             cert_store,
+            client_request_timeout_secs,
         })
     }
 

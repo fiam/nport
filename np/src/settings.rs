@@ -37,18 +37,21 @@ pub struct Settings {
 static DEFAULT_SERVER: &str = "api.nport.io";
 
 impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let s = Config::builder()
+    pub fn new(use_config_file: bool) -> Result<Self, ConfigError> {
+        let mut builder = Config::builder()
             .set_default("server.hostname", DEFAULT_SERVER)
             .unwrap()
-            .add_source(File::with_name("nport").required(false))
             .add_source(
                 Environment::with_prefix("NP")
                     .try_parsing(true)
                     .separator("_"),
-            )
-            .build()?;
+            );
 
+        if use_config_file {
+            builder = builder.add_source(File::with_name("nport").required(false));
+        }
+
+        let s = builder.build()?;
         s.try_deserialize()
     }
 }
@@ -64,7 +67,7 @@ mod tests {
         let _guard = TEST_ENV_MUTEX.lock().unwrap();
         let cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(std::env::temp_dir()).unwrap();
-        let s = Settings::new().unwrap();
+        let s = Settings::new(true).unwrap();
         assert_eq!(s.server.hostname, DEFAULT_SERVER);
         std::env::set_current_dir(cwd).unwrap();
     }
@@ -77,7 +80,7 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(std::env::temp_dir()).unwrap();
         std::env::set_var(var, foobar);
-        let s = Settings::new().unwrap();
+        let s = Settings::new(true).unwrap();
         assert_eq!(s.server.hostname, foobar);
         std::env::set_current_dir(cwd).unwrap();
         std::env::remove_var(var);

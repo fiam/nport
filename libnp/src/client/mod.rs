@@ -20,6 +20,7 @@ pub struct HttpClose {
 pub enum HttpResponseError {
     NotRegistered,
     InvalidMethod(String),
+    InvalidHeader(String),
     Build(String),
     Request(String),
     Read(String),

@@ -6,6 +6,7 @@ use futures_util::stream::SplitSink;
 use futures_util::stream::SplitStream;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
+use libnp::server::HttpOpenResult;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -20,6 +21,22 @@ use crate::error::{Error, Result};
 
 pub mod port;
 
+#[derive(Debug)]
+pub struct HttpForwarding {
+    hostname: String,
+    local_port: u16,
+}
+
+impl HttpForwarding {
+    pub fn hostname(&self) -> &str {
+        &self.hostname
+    }
+
+    pub fn local_port(&self) -> u16 {
+        self.local_port
+    }
+}
+
 struct Connection {
     sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
     receiver: Arc<RwLock<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
@@ -33,6 +50,12 @@ pub struct Client {
     // port uuid => queue
     port_writers: RwLock<HashMap<String, mpsc::Sender<PortMessage>>>,
     connection: RwLock<Option<Connection>>,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Client {
@@ -58,6 +81,11 @@ impl Client {
         Ok(())
     }
 
+    pub async fn disconnect(&self) -> Result<()> {
+        *self.connection.write().await = None;
+        Ok(())
+    }
+
     pub async fn http_open(&self, hostname: &str, local_port: u16) -> Result<()> {
         let msg = libnp::client::Message::HttpOpen(libnp::client::HttpOpen {
             hostname: hostname.to_owned(),
@@ -67,13 +95,20 @@ impl Client {
     }
 
     pub async fn http_register(&self, msg: &libnp::server::HttpOpened) -> Result<()> {
-        let hostname = msg.hostname.clone();
-        let mut http_forwardings = self.http_forwardings.write().await;
-        if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
-            entry.insert(msg.local_port);
-            return Ok(());
+        match &msg.result {
+            HttpOpenResult::Ok => {
+                let hostname = msg.hostname.clone();
+                let mut http_forwardings = self.http_forwardings.write().await;
+                if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
+                    entry.insert(msg.local_port);
+                    Ok(())
+                } else {
+                    Err(Error::HttpHostnameAlreadyRegistered(hostname))
+                }
+            }
+            HttpOpenResult::InUse => Err(Error::HttpHostnameAlreadyInUse(msg.hostname.clone())),
+            HttpOpenResult::Invalid => Err(Error::HttpHostnameInvalid(msg.hostname.clone())),
         }
-        Err(Error::HttpHostnameAlreadyRegistered(hostname))
     }
 
     pub async fn http_deregister(&self, msg: &libnp::server::HttpClosed) -> Result<()> {
@@ -207,5 +242,16 @@ impl Client {
             }
             None => Err(Error::Disconnected),
         }
+    }
+
+    pub async fn http_forwardings(&self) -> Vec<HttpForwarding> {
+        let mut forwardings = vec![];
+        self.http_forwardings.read().await.iter().for_each(|entry| {
+            forwardings.push(HttpForwarding {
+                hostname: entry.0.clone(),
+                local_port: *entry.1,
+            })
+        });
+        forwardings
     }
 }

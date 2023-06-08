@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::server::{client::Client, state::SharedState};
+use crate::server::{client::Client, hostname, state::SharedState};
 
 pub async fn open(
     state: &SharedState,
@@ -11,12 +11,25 @@ pub async fn open(
 ) -> Result<()> {
     use libnp::server;
 
-    let hostname = if !open.hostname.is_empty() {
+    let subdomain = if !open.hostname.is_empty() {
+        // Don't allow invalid hostnames nor names with multiple labels
+        if !hostname::is_valid(&open.hostname) || open.hostname.contains('.') {
+            return client
+                .send(&server::Message::HttpOpened(server::HttpOpened::failed(
+                    server::HttpOpenResult::Invalid,
+                )))
+                .await;
+        }
         open.hostname
     } else {
         names::Generator::with_naming(names::Name::Numbered)
             .next()
             .unwrap()
+    };
+    let hostname = if state.domain().is_empty() {
+        subdomain
+    } else {
+        format!("{}.{}", subdomain, state.domain())
     };
     if !state
         .registry()

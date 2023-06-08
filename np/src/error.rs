@@ -16,6 +16,10 @@ pub enum Error {
     Hyper(#[from] hyper::Error),
     #[error("http client error {0}")]
     HyperHttp(#[from] hyper::http::Error),
+    #[error("HTTP hostname {0} is already being used")]
+    HttpHostnameAlreadyInUse(String),
+    #[error("HTTP hostname {0} is invalid")]
+    HttpHostnameInvalid(String),
     #[error("HTTP hostname {0} already registered")]
     HttpHostnameAlreadyRegistered(String),
     #[error("HTTP hostname {0} not registered")]

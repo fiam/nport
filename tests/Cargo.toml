@@ -13,4 +13,8 @@ name = "integration"
 path = "integration.rs"
 
 [dependencies]
+env_logger = "0.10.0"
+httptest = "0.15.4"
+hyper = { version = "0.14.26", features = ["client"] }
 tokio = { version = "1.28.2", features = ["macros"] }
+tracing-subscriber = "0.3.17"
