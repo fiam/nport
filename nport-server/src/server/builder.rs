@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use tokio::sync::Mutex;
 
 use crate::cert::{CloudflareUpdater, Generator, Store};
 
@@ -86,6 +87,8 @@ impl Builder {
             domain: self.domain,
             cert_store,
             client_request_timeout_secs,
+            http_shutdown: Mutex::new(None),
+            https_shutdown: Mutex::new(None),
         })
     }
 

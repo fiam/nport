@@ -2,31 +2,38 @@ use std::{net::SocketAddr, str::FromStr, sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
 use np::client::Client;
-use nport_server::server::Server;
+use tokio::sync::mpsc;
 
-const SERVER_PORT: u16 = 4000;
 const CLIENT_REQUEST_TIMEOUT_SECS: u16 = 1;
 
-async fn start_server() -> tokio::task::JoinHandle<Server> {
+async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>) {
     let server = nport_server::server::Builder::default()
-        .http_port(SERVER_PORT)
+        .http_port(server_port)
         .domain("localhost")
         .client_request_timeout_secs(CLIENT_REQUEST_TIMEOUT_SECS)
         .server()
         .await
         .unwrap();
+    let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+
     let task = tokio::spawn(async move {
-        server.run().await;
-        server
+        tokio::select! {
+                _ = server.run() => {
+                },
+                _ = stop_rx.recv() => {
+                    server.stop().await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10000)).await;
+                }
+        }
     });
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    task
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    (task, stop_tx)
 }
 
-async fn connected_client() -> Arc<np::client::Client> {
+async fn connected_client(server_port: u16) -> Arc<np::client::Client> {
     let client = Arc::new(np::client::Client::new());
     client
-        .connect(&format!("localhost:{}", SERVER_PORT))
+        .connect(&format!("localhost:{}", server_port))
         .await
         .unwrap();
     client
@@ -37,15 +44,18 @@ async fn client_message(client: Arc<Client>) -> np::error::Result<()> {
     np::dispatch::message(client.clone(), msg).await
 }
 
-fn request_for_hostname(client_hostname: &str) -> hyper::http::request::Builder {
+fn request_for_hostname(server_port: u16, client_hostname: &str) -> hyper::http::request::Builder {
     hyper::http::Request::builder()
-        .uri(format!("http://localhost:{}", SERVER_PORT))
+        .uri(format!("http://localhost:{}", server_port))
         .header("Host", client_hostname)
 }
 
-async fn response_for_hostname(client_hostname: &str) -> hyper::Response<hyper::Body> {
+async fn response_for_hostname(
+    server_port: u16,
+    client_hostname: &str,
+) -> hyper::Response<hyper::Body> {
     let http_client = hyper::Client::new();
-    let req = request_for_hostname(client_hostname)
+    let req = request_for_hostname(server_port, client_hostname)
         .body(hyper::Body::from(""))
         .unwrap();
     http_client.request(req).await.unwrap()
@@ -64,26 +74,29 @@ fn post_json_expectation() -> httptest::Expectation {
         .respond_with(status_code(200).body("hello").append_header("x-foo", "Bar"))
 }
 
-// #[tokio::test]
-// async fn it_connects() {
-//     let server_task = start_server().await;
-//     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-//     let client = np::client::Client::new();
-//     client
-//         .connect(&format!("127.0.0.1:{}", SERVER_PORT))
-//         .await
-//         .unwrap();
-//     server_task.abort();
-// }
+#[tokio::test]
+async fn it_connects() {
+    const SERVER_PORT: u16 = 4000;
+    let (server_task, server_stop) = start_server(SERVER_PORT).await;
+    let client = np::client::Client::new();
+    client
+        .connect(&format!("localhost:{}", SERVER_PORT))
+        .await
+        .unwrap();
+    drop(client);
+    server_stop.send(()).await.unwrap();
+    server_task.await.unwrap();
+}
 
 #[tokio::test]
 async fn it_forwards_http_requests() {
+    const SERVER_PORT: u16 = 4001;
     // tracing_subscriber::fmt().with_env_filter("trace").init();
     let client_subdomain = "something";
     let client_hostname = "something.localhost";
     let client_http_port = 11234;
-    let server_task = start_server().await;
-    let client = connected_client().await;
+    let (server_task, server_stop) = start_server(SERVER_PORT).await;
+    let client = connected_client(SERVER_PORT).await;
 
     // This should be refused, since . is not allowed in the hostname
     client.http_open("foo.bar", client_http_port).await.unwrap();
@@ -91,7 +104,7 @@ async fn it_forwards_http_requests() {
     assert_eq!(0, client.http_forwardings().await.len());
 
     // Forwarding is not set up, we should get a 404
-    let resp = response_for_hostname(client_hostname).await;
+    let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     assert_eq!(404, resp.status());
 
     client
@@ -107,7 +120,7 @@ async fn it_forwards_http_requests() {
 
     // If another client tries to register the same hostname, we should get an error.
     // Use a different local port intentionally
-    let client2 = connected_client().await;
+    let client2 = connected_client(SERVER_PORT).await;
     client2
         .http_open(client_subdomain, client_http_port + 100)
         .await
@@ -117,7 +130,7 @@ async fn it_forwards_http_requests() {
     // If the client is not running, we should get a 504 in ~CLIENT_REQUEST_TIMEOUT_SECS
 
     let before = SystemTime::now();
-    let resp = response_for_hostname(client_hostname).await;
+    let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     let delta = SystemTime::now()
         .duration_since(before)
         .unwrap()
@@ -125,7 +138,7 @@ async fn it_forwards_http_requests() {
     assert!((1000..1250).contains(&delta));
     assert_eq!(504, resp.status());
 
-    let (client_stop_tx, mut client_stop_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (client_stop_tx, mut client_stop_rx) = mpsc::channel::<()>(1);
 
     let client_task = tokio::spawn(async move {
         loop {
@@ -141,7 +154,7 @@ async fn it_forwards_http_requests() {
     });
 
     // If the local port is closed, we should get a 502
-    let resp = response_for_hostname(client_hostname).await;
+    let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     assert_eq!(502, resp.status());
 
     let http_server = httptest::ServerBuilder::new()
@@ -155,13 +168,13 @@ async fn it_forwards_http_requests() {
     );
 
     // Once the local port is open, we should get the forwarded response
-    let resp = response_for_hostname(client_hostname).await;
+    let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     assert_eq!(206, resp.status());
 
     http_server.expect(post_json_expectation());
 
     let http_client = hyper::Client::new();
-    let req = request_for_hostname(client_hostname)
+    let req = request_for_hostname(SERVER_PORT, client_hostname)
         .uri(format!("http://localhost:{}/foo/bar", SERVER_PORT))
         .header("content-type", "application/json")
         .method("POST")
@@ -183,8 +196,9 @@ async fn it_forwards_http_requests() {
     drop(client);
 
     // Disconnecting the client should unregister the hostname
-    let resp = response_for_hostname(client_hostname).await;
+    let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     assert_eq!(404, resp.status());
 
-    server_task.abort();
+    server_stop.send(()).await.unwrap();
+    server_task.await.unwrap();
 }

@@ -14,6 +14,7 @@ use axum::{
 };
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::ServerConfig;
+use tokio::sync::{oneshot, Mutex};
 use tower::ServiceExt;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
@@ -66,6 +67,8 @@ pub struct Server {
     domain: String,
     cert_store: Option<Arc<cert::Store>>,
     client_request_timeout_secs: u16,
+    http_shutdown: Mutex<Option<oneshot::Sender<()>>>,
+    https_shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl Server {
@@ -128,9 +131,14 @@ impl Server {
         }
         let app = self.build_app(state);
         let addr = SocketAddr::from(([127, 0, 0, 1], self.http_port));
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        *self.http_shutdown.lock().await = Some(shutdown_tx);
         tracing::debug!("listening for HTTP on {}", addr);
         axum::Server::bind(&addr)
             .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .with_graceful_shutdown(async move {
+                shutdown_rx.await.ok();
+            })
             .await
             .map_err(|err| err.into())
     }
@@ -183,5 +191,14 @@ impl Server {
         let (http_result, https_result) = tokio::join!(http, https);
         http_result.unwrap();
         https_result.unwrap();
+    }
+
+    pub async fn stop(&self) {
+        if let Some(shutdown) = self.http_shutdown.lock().await.take() {
+            shutdown.send(()).ok();
+        }
+        if let Some(shutdown) = self.https_shutdown.lock().await.take() {
+            shutdown.send(()).ok();
+        }
     }
 }
