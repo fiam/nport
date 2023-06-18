@@ -173,7 +173,7 @@ impl Server {
         let addr = SocketAddr::from((self.bind_addr, self.https_port));
         tracing::debug!("listening for HTTPS on {}", addr);
         let server = axum_server::bind_rustls(addr, RustlsConfig::from_config(config.into()))
-            .serve(app.into_make_service());
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>());
         let updater = tokio::spawn(async move {
             loop {
                 cert_store.update().await;
