@@ -84,6 +84,7 @@ impl Server {
         let host_router = Router::new()
             .route("/v1/connect", get(handlers::websocket))
             .route("/", get(handlers::home))
+            .route("/build_info.json", get(handlers::build_info))
             .route_layer(middleware::from_fn_with_state(
                 state.clone(),
                 to_tls_middleware,
