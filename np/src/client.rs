@@ -6,7 +6,10 @@ use futures_util::stream::SplitSink;
 use futures_util::stream::SplitStream;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
+
+use libnp::server::split_origin;
 use libnp::server::HttpOpenResult;
+use libnp::server::PortOpenResult;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -37,6 +40,29 @@ impl HttpForwarding {
     }
 }
 
+#[derive(Debug)]
+pub struct PortForwarding {
+    protocol: PortProtocol,
+    hostname: String,
+    remote_port: u16,
+    local_port: u16,
+}
+
+impl PortForwarding {
+    pub fn protocol(&self) -> PortProtocol {
+        self.protocol
+    }
+    pub fn hostname(&self) -> &str {
+        &self.hostname
+    }
+    pub fn remote_port(&self) -> u16 {
+        self.remote_port
+    }
+    pub fn local_port(&self) -> u16 {
+        self.local_port
+    }
+}
+
 struct Connection {
     sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
     receiver: Arc<RwLock<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
@@ -45,7 +71,7 @@ struct Connection {
 pub struct Client {
     // hostname => local_port
     http_forwardings: RwLock<HashMap<String, u16>>,
-    // protocol:hostname => local port
+    // protocol:hostname:remote_port => local port
     port_forwardings: RwLock<HashMap<String, u16>>,
     // port uuid => queue
     port_writers: RwLock<HashMap<String, mpsc::Sender<PortMessage>>>,
@@ -146,13 +172,19 @@ impl Client {
     }
 
     pub async fn port_register(&self, msg: &libnp::server::PortOpened) -> Result<()> {
-        let origin = msg.origin();
-        let mut port_forwardings = self.port_forwardings.write().await;
-        if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
-            entry.insert(msg.local_port);
-            return Ok(());
+        match msg.result {
+            PortOpenResult::Ok => {
+                let origin = msg.origin();
+                let mut port_forwardings = self.port_forwardings.write().await;
+                if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
+                    entry.insert(msg.local_port);
+                    Ok(())
+                } else {
+                    Err(Error::PortOriginAlreadyRegistered(origin))
+                }
+            }
+            PortOpenResult::InUse => Err(Error::PortRemoteAlreadyInUse(msg.origin())),
         }
-        Err(Error::PortOriginAlreadyRegistered(origin))
     }
 
     pub async fn port_writer_register(
@@ -251,6 +283,20 @@ impl Client {
                 hostname: entry.0.clone(),
                 local_port: *entry.1,
             })
+        });
+        forwardings
+    }
+
+    pub async fn port_forwardings(&self) -> Vec<PortForwarding> {
+        let mut forwardings = vec![];
+        self.port_forwardings.read().await.iter().for_each(|entry| {
+            let (protocol, hostname, port) = split_origin(entry.0).unwrap();
+            forwardings.push(PortForwarding {
+                protocol,
+                hostname,
+                remote_port: port,
+                local_port: *entry.1,
+            });
         });
         forwardings
     }

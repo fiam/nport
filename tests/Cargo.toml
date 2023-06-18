@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dev-dependencies]
+libnp = { path = "../libnp" }
 np = { path = "../np" }
 nport-server = { path = "../nport-server" }
 

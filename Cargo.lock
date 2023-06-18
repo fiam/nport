@@ -2105,6 +2105,7 @@ dependencies = [
  "env_logger",
  "httptest",
  "hyper",
+ "libnp",
  "np",
  "nport-server",
  "tokio",

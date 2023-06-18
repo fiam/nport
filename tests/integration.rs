@@ -1,8 +1,13 @@
 use std::{net::SocketAddr, str::FromStr, sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
+use libnp::PortProtocol;
 use np::client::Client;
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::mpsc,
+};
 
 const CLIENT_REQUEST_TIMEOUT_SECS: u16 = 1;
 
@@ -74,6 +79,25 @@ fn post_json_expectation() -> httptest::Expectation {
         .respond_with(status_code(200).body("hello").append_header("x-foo", "Bar"))
 }
 
+fn run_client(client: Arc<Client>) -> (tokio::task::JoinHandle<Arc<Client>>, mpsc::Sender<()>) {
+    let (client_stop_tx, mut client_stop_rx) = mpsc::channel::<()>(1);
+
+    let client_task = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                msg = client_message(client.clone()) => {
+                    msg.unwrap();
+                }
+                _ = client_stop_rx.recv() => {
+                    return client
+                }
+            }
+        }
+    });
+
+    (client_task, client_stop_tx)
+}
+
 #[tokio::test]
 async fn it_connects() {
     const SERVER_PORT: u16 = 4000;
@@ -90,8 +114,8 @@ async fn it_connects() {
 
 #[tokio::test]
 async fn it_forwards_http_requests() {
-    const SERVER_PORT: u16 = 4001;
     // tracing_subscriber::fmt().with_env_filter("trace").init();
+    const SERVER_PORT: u16 = 4001;
     let client_subdomain = "something";
     let client_hostname = "something.localhost";
     let client_http_port = 11234;
@@ -138,20 +162,7 @@ async fn it_forwards_http_requests() {
     assert!((1000..1250).contains(&delta));
     assert_eq!(504, resp.status());
 
-    let (client_stop_tx, mut client_stop_rx) = mpsc::channel::<()>(1);
-
-    let client_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                msg = client_message(client.clone()) => {
-                    msg.unwrap();
-                }
-                _ = client_stop_rx.recv() => {
-                    return client
-                }
-            }
-        }
-    });
+    let (client_task, client_stop) = run_client(client);
 
     // If the local port is closed, we should get a 502
     let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
@@ -191,7 +202,7 @@ async fn it_forwards_http_requests() {
         hyper::body::to_bytes(resp.into_body()).await.unwrap()
     );
 
-    client_stop_tx.send(()).await.unwrap();
+    client_stop.send(()).await.unwrap();
     let client = client_task.await.unwrap();
     drop(client);
 
@@ -199,6 +210,136 @@ async fn it_forwards_http_requests() {
     let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     assert_eq!(404, resp.status());
 
+    server_stop.send(()).await.unwrap();
+    server_task.await.unwrap();
+}
+
+async fn test_read_write_both_ways(
+    server_stream: &mut TcpStream,
+    client_stream: &mut TcpStream,
+    test_payload: &Vec<u8>,
+) {
+    let mut buf = vec![0; test_payload.len()];
+    server_stream.write_all(test_payload).await.unwrap();
+    let n = client_stream.read_exact(&mut buf).await.unwrap();
+    assert_eq!(test_payload.len(), n);
+    assert_eq!(test_payload[..], buf[0..n]);
+
+    client_stream.write_all(test_payload).await.unwrap();
+    let n = server_stream.read_exact(&mut buf).await.unwrap();
+    assert_eq!(test_payload.len(), n);
+    assert_eq!(test_payload[..], buf[0..n]);
+}
+
+#[tokio::test]
+async fn it_forwards_tcp_connections() {
+    tracing_subscriber::fmt().with_env_filter("trace").init();
+    const SERVER_PORT: u16 = 4002;
+    // tracing_subscriber::fmt().with_env_filter("trace").init();
+    let client_tcp_port = 11235;
+    let (server_task, server_stop) = start_server(SERVER_PORT).await;
+    let client = connected_client(SERVER_PORT).await;
+
+    // Opening port 0 should assign a random port
+    client.tcp_open("", 0, client_tcp_port).await.unwrap();
+    client_message(client.clone()).await.unwrap();
+
+    let forwardings = client.port_forwardings().await;
+    assert_eq!(1, forwardings.len());
+    assert_eq!(PortProtocol::Tcp, forwardings[0].protocol());
+    assert_ne!("", forwardings[0].hostname());
+    assert_ne!(0, forwardings[0].remote_port());
+    assert_eq!(client_tcp_port, forwardings[0].local_port());
+
+    // Opening a second client on the same remote host:port should fail
+    let client2 = connected_client(SERVER_PORT).await;
+    client2
+        .tcp_open(
+            forwardings[0].hostname(),
+            forwardings[0].remote_port(),
+            client_tcp_port,
+        )
+        .await
+        .unwrap();
+    client_message(client2.clone()).await.unwrap();
+    assert_eq!(0, client2.port_forwardings().await.len());
+    drop(client2);
+
+    let (client_task, client_stop) = run_client(client);
+
+    let remote_port = forwardings[0].remote_port();
+
+    let mut buf = vec![0; 32 * 1024];
+
+    // Connecting to the remote end without a local listener should immediately close the connection
+    let before = SystemTime::now();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", remote_port))
+        .await
+        .unwrap();
+
+    let n = stream.read(&mut buf).await.unwrap();
+    assert_eq!(0, n);
+    assert!(
+        SystemTime::now()
+            .duration_since(before)
+            .unwrap()
+            .as_millis()
+            < 100
+    );
+
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", client_tcp_port))
+        .await
+        .unwrap();
+
+    let mut server_stream = TcpStream::connect(format!("127.0.0.1:{}", remote_port))
+        .await
+        .unwrap();
+
+    let (mut client_stream, _) = listener.accept().await.unwrap();
+
+    let short_payload = b"test".to_vec();
+    test_read_write_both_ways(&mut server_stream, &mut client_stream, &short_payload).await;
+    let long_payload = b"test"
+        .iter()
+        .flat_map(|x| std::iter::repeat(*x).take(1024))
+        .collect::<Vec<u8>>();
+    test_read_write_both_ways(&mut server_stream, &mut client_stream, &long_payload).await;
+
+    // Closing the server_stream should close the client
+    drop(server_stream);
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let n = client_stream.read(&mut buf).await.unwrap();
+    assert_eq!(0, n);
+    drop(client_stream);
+
+    let mut server_stream = TcpStream::connect(format!("127.0.0.1:{}", remote_port))
+        .await
+        .unwrap();
+
+    let (mut client_stream, _) = listener.accept().await.unwrap();
+    // Ensure we're connected again
+    test_read_write_both_ways(&mut server_stream, &mut client_stream, &short_payload).await;
+
+    // Closing client_stream should close server_stream
+    drop(client_stream);
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let n = server_stream.read(&mut buf).await.unwrap();
+    assert_eq!(0, n);
+    drop(server_stream);
+
+    client_stop.send(()).await.unwrap();
+    let client = client_task.await.unwrap();
+    drop(client);
+    // Dropping the client should close the remote TCP port
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        std::io::ErrorKind::ConnectionRefused,
+        TcpStream::connect(format!("127.0.0.1:{}", remote_port))
+            .await
+            .err()
+            .unwrap()
+            .kind()
+    );
     server_stop.send(()).await.unwrap();
     server_task.await.unwrap();
 }

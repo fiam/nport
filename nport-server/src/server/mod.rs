@@ -193,6 +193,7 @@ impl Server {
         https_result.unwrap();
     }
 
+    /// Stops the server. Notice that this only implemented for HTTP for the time being
     pub async fn stop(&self) {
         if let Some(shutdown) = self.http_shutdown.lock().await.take() {
             shutdown.send(()).ok();

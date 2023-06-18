@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::{error::Result, PortProtocol};
+use crate::{error::Result, Error, PortProtocol};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum HttpOpenResult {
@@ -64,6 +64,22 @@ pub struct HttpRequest {
 
 fn port_origin(protocol: PortProtocol, hostname: &str, port: u16) -> String {
     format!("{protocol}:{hostname}:{port}")
+}
+
+pub fn split_origin(origin: &str) -> Result<(PortProtocol, String, u16)> {
+    let parts = origin.split(':').collect::<Vec<&str>>();
+    if parts.len() != 3 {
+        return Err(Error::InvalidOrigin(format!(
+            "'{}' doesn't have 3 segments",
+            origin
+        )));
+    }
+    let protocol =
+        PortProtocol::from_str(parts[0]).map_err(|e| Error::InvalidOrigin(e.to_string()))?;
+    let port = parts[2]
+        .parse::<u16>()
+        .map_err(|e| Error::InvalidOrigin(format!("port {} is not a number: {}", parts[2], e)))?;
+    Ok((protocol, parts[1].to_owned(), port))
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
