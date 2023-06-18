@@ -161,7 +161,7 @@ impl Store {
 
     pub async fn update(&self) {
         if let Err(err) = self.renew().await {
-            error!(errror=?err, domain = self.domain,"renewing certificate");
+            error!(error=?err, domain = self.domain,"renewing certificate");
         }
     }
 }

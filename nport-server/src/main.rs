@@ -12,6 +12,15 @@ async fn main() {
         .init();
 
     let mut builder = nport_server::server::Builder::default();
+    if let Ok(val) = env::var("PRODUCTION") {
+        let production = val.parse::<bool>().expect("invalid PRODUCTION value");
+        builder = builder.production(production);
+    }
+
+    if let Ok(val) = env::var("BIND_ADDRESS") {
+        builder = builder.bind_addr(&val);
+    }
+
     if let Ok(val) = env::var("HTTP_PORT") {
         let port = val.parse::<u16>().expect("invalid HTTP port");
         builder = builder.http_port(port);
@@ -19,6 +28,10 @@ async fn main() {
     if let Ok(val) = env::var("HTTPS_PORT") {
         let port = val.parse::<u16>().expect("invalid HTTPS port");
         builder = builder.https_port(port);
+    }
+    if let Ok(val) = env::var("PUBLIC_HTTPS_PORT") {
+        let port = val.parse::<u16>().expect("invalid PUBLIC_HTTPS_PORT port");
+        builder = builder.public_https_port(port);
     }
     if let Ok(val) = env::var("DOMAIN") {
         builder = builder.domain(val);

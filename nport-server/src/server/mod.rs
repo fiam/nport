@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use axum::{
     body::Body,
@@ -45,10 +48,15 @@ async fn to_tls_middleware<B>(
     if state.has_tls() && !state.via_tls() {
         let mut parts = request.uri().clone().into_parts();
         parts.scheme = Some(Scheme::HTTPS);
-        let authority_str = if state.https_port() == DEFAULT_HTTPS_PORT {
+        let https_port = if state.public_https_port() > 0 {
+            state.public_https_port()
+        } else {
+            state.https_port()
+        };
+        let authority_str = if https_port == DEFAULT_HTTPS_PORT {
             state.hostname().to_string()
         } else {
-            format!("{}:{}", state.hostname(), state.https_port())
+            format!("{}:{}", state.hostname(), https_port)
         };
         if let Ok(authority) = authority_str.parse::<Authority>() {
             parts.authority = Some(authority);
@@ -62,8 +70,10 @@ async fn to_tls_middleware<B>(
 }
 
 pub struct Server {
+    bind_addr: IpAddr,
     http_port: u16,
     https_port: u16,
+    public_https_port: u16,
     domain: String,
     cert_store: Option<Arc<cert::Store>>,
     client_request_timeout_secs: u16,
@@ -72,11 +82,11 @@ pub struct Server {
 }
 
 impl Server {
-    fn public_hostname(&self) -> &str {
+    fn public_hostname(&self) -> String {
         if self.domain.is_empty() {
-            "127.0.0.1"
+            self.bind_addr.to_string()
         } else {
-            &self.domain
+            self.domain.to_string()
         }
     }
 
@@ -96,7 +106,7 @@ impl Server {
             .route("/*path", any(handlers::forward))
             .with_state(state.clone());
 
-        let public_hostname = self.public_hostname().to_string();
+        let public_hostname = self.public_hostname();
 
         let chooser = |Host(hostname): Host, request: Request<Body>| async move {
             // Split port
@@ -131,7 +141,7 @@ impl Server {
             return Ok(());
         }
         let app = self.build_app(state);
-        let addr = SocketAddr::from(([127, 0, 0, 1], self.http_port));
+        let addr = SocketAddr::from((self.bind_addr, self.http_port));
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         *self.http_shutdown.lock().await = Some(shutdown_tx);
         tracing::debug!("listening for HTTP on {}", addr);
@@ -160,7 +170,7 @@ impl Server {
             .with_no_client_auth()
             .with_cert_resolver(cert_store.clone());
 
-        let addr = SocketAddr::from(([127, 0, 0, 1], self.https_port));
+        let addr = SocketAddr::from((self.bind_addr, self.https_port));
         tracing::debug!("listening for HTTPS on {}", addr);
         let server = axum_server::bind_rustls(addr, RustlsConfig::from_config(config.into()))
             .serve(app.into_make_service());
@@ -181,8 +191,9 @@ impl Server {
         let state = Arc::new(AppState::new(
             self.http_port,
             self.https_port,
+            self.public_https_port,
             &self.domain,
-            self.public_hostname(),
+            &self.public_hostname(),
             self.client_request_timeout_secs,
         ));
 

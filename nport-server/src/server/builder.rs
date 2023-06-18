@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::IpAddr, str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use tokio::sync::Mutex;
@@ -9,10 +9,13 @@ use super::Server;
 
 const DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS: u16 = 30;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Builder {
+    production: bool,
+    bind_addr: String,
     http_port: u16,
     https_port: u16,
+    public_https_port: u16,
     domain: String,
     certs_dir: String,
     acme_email: String,
@@ -24,6 +27,16 @@ pub struct Builder {
 }
 
 impl Builder {
+    pub fn production(mut self, production: bool) -> Self {
+        self.production = production;
+        self
+    }
+
+    pub fn bind_addr(mut self, addr: &str) -> Self {
+        self.bind_addr = addr.to_string();
+        self
+    }
+
     pub fn http_port(mut self, port: u16) -> Self {
         self.http_port = port;
         self
@@ -31,6 +44,11 @@ impl Builder {
 
     pub fn https_port(mut self, port: u16) -> Self {
         self.https_port = port;
+        self
+    }
+
+    pub fn public_https_port(mut self, port: u16) -> Self {
+        self.public_https_port = port;
         self
     }
 
@@ -75,15 +93,26 @@ impl Builder {
     }
 
     pub async fn server(self) -> anyhow::Result<Server> {
+        if self.production {
+            self.production_check()?;
+        }
         let cert_store = self.cert_store().await?;
         let client_request_timeout_secs = if self.client_request_timeout_secs > 0 {
             self.client_request_timeout_secs
         } else {
             DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS
         };
+        let addr_string = if self.bind_addr.is_empty() {
+            "127.0.0.1"
+        } else {
+            &self.bind_addr
+        };
+        let addr = IpAddr::from_str(addr_string)?;
         Ok(Server {
+            bind_addr: addr,
             http_port: self.http_port,
             https_port: self.https_port,
+            public_https_port: self.public_https_port,
             domain: self.domain,
             cert_store,
             client_request_timeout_secs,
@@ -137,5 +166,37 @@ impl Builder {
             }
             Ok(None)
         }
+    }
+
+    fn production_check(&self) -> anyhow::Result<()> {
+        println!("CHECK {:?}", &self);
+        if self.http_port == 0 {
+            return Err(anyhow::anyhow!("missing http_port"));
+        }
+        if self.https_port == 0 {
+            return Err(anyhow::anyhow!("missing https_port"));
+        }
+        if self.domain.is_empty() {
+            return Err(anyhow::anyhow!("missing domain"));
+        }
+        if self.certs_dir.is_empty() {
+            return Err(anyhow::anyhow!("missing certs_dir"));
+        }
+        if self.acme_email.is_empty() {
+            return Err(anyhow::anyhow!("missing acme_email"));
+        }
+        if self.acme_domain.is_empty() {
+            return Err(anyhow::anyhow!("missing acme_domain"));
+        }
+        if self.acme_staging {
+            return Err(anyhow::anyhow!("acme_staging is true"));
+        }
+        if self.cloudflare_zone_id.is_empty() {
+            return Err(anyhow::anyhow!("missing cloudflare_zone_id"));
+        }
+        if self.cloudflare_api_token.is_empty() {
+            return Err(anyhow::anyhow!("missing cloudflare_api_token"));
+        }
+        Ok(())
     }
 }

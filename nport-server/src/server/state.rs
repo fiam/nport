@@ -6,6 +6,7 @@ pub struct AppState {
     registry: Arc<Registry>,
     http_port: u16,
     https_port: u16,
+    public_https_port: u16,
     domain: String,
     hostname: String,
     via_tls: bool,
@@ -16,6 +17,7 @@ impl AppState {
     pub fn new(
         http_port: u16,
         https_port: u16,
+        public_https_port: u16,
         domain: &str,
         hostname: &str,
         client_request_timeout_secs: u16,
@@ -24,6 +26,7 @@ impl AppState {
             registry: Arc::new(Registry::default()),
             http_port,
             https_port,
+            public_https_port,
             domain: domain.to_string(),
             hostname: hostname.to_string(),
             via_tls: false,
@@ -40,6 +43,7 @@ impl AppState {
             registry: self.registry.clone(),
             http_port: self.http_port,
             https_port: self.https_port,
+            public_https_port: self.public_https_port,
             domain: self.domain.clone(),
             hostname: self.hostname.clone(),
             via_tls: true,
@@ -65,6 +69,10 @@ impl AppState {
 
     pub fn https_port(&self) -> u16 {
         self.https_port
+    }
+
+    pub fn public_https_port(&self) -> u16 {
+        self.public_https_port
     }
 
     pub fn client_request_timeout_secs(&self) -> u16 {
