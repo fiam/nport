@@ -19,6 +19,7 @@ pub struct Builder {
     domain: String,
     certs_dir: String,
     acme_email: String,
+    acme_persist_dir: String,
     acme_domain: String,
     acme_staging: bool,
     cloudflare_zone_id: String,
@@ -64,6 +65,11 @@ impl Builder {
 
     pub fn acme_email<T: AsRef<str>>(mut self, email: T) -> Self {
         self.acme_email = email.as_ref().to_string();
+        self
+    }
+
+    pub fn acme_persist_dir<T: AsRef<str>>(mut self, dir: T) -> Self {
+        self.acme_persist_dir = dir.as_ref().to_string();
         self
     }
 
@@ -122,7 +128,9 @@ impl Builder {
     }
 
     fn has_acme(&self) -> bool {
-        !self.acme_email.is_empty() && !self.acme_domain.is_empty()
+        !self.acme_email.is_empty()
+            && !self.acme_persist_dir.is_empty()
+            && !self.acme_domain.is_empty()
     }
 
     fn has_cloudflare(&self) -> bool {
@@ -151,7 +159,12 @@ impl Builder {
                 &self.cloudflare_api_token,
                 &self.cloudflare_zone_id,
             ));
-            let generator = Generator::new(&self.acme_email, self.acme_staging, updater);
+            let generator = Generator::new(
+                &self.acme_email,
+                &self.acme_persist_dir,
+                self.acme_staging,
+                updater,
+            );
             let store = Store::new(&self.certs_dir, &self.acme_domain, Arc::new(generator));
             store.load().await?;
             Ok(Some(Arc::new(store)))

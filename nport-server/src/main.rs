@@ -44,6 +44,10 @@ async fn main() {
         builder = builder.acme_email(val);
     }
 
+    if let Ok(val) = env::var("ACME_PERSIST_DIR") {
+        builder = builder.acme_persist_dir(val);
+    }
+
     if let Ok(val) = env::var("ACME_DOMAIN") {
         builder = builder.acme_domain(val);
     }

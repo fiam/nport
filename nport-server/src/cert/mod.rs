@@ -19,6 +19,7 @@ mod tests {
     #[tokio::test]
     async fn test_obtain_certificate() {
         let email = env::var("ACME_EMAIL").unwrap_or_default();
+        let acme_persist_dir = env::var("ACME_PERSIST_DIR").unwrap_or_default();
         let domain = env::var("ACME_DOMAIN").unwrap_or_default();
         let zone_id = env::var("CLOUDFLARE_ZONE_ID").unwrap_or_default();
         let token = env::var("CLOUDFLARE_API_TOKEN").unwrap_or_default();
@@ -28,7 +29,7 @@ mod tests {
         }
         let updater = Box::new(cloudflare::Updater::new(&token, &zone_id));
 
-        let cert = generator::Generator::new(email, true, updater);
+        let cert = generator::Generator::new(email, acme_persist_dir, true, updater);
         cert.request(&domain).await.unwrap();
     }
 }

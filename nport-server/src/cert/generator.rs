@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use acme_lib::{create_p384_key, persist::MemoryPersist, Certificate, Directory, DirectoryUrl};
+use acme_lib::{create_p384_key, persist::FilePersist, Certificate, Directory, DirectoryUrl};
 use tokio::time::{sleep, Instant};
 use tracing::debug;
 use trust_dns_resolver::{
@@ -12,6 +12,7 @@ use super::dns::Updater;
 
 pub struct Generator {
     email: String,
+    persist_dir: String,
     staging: bool,
     updater: Box<dyn Updater + Send + Sync>,
 }
@@ -19,11 +20,13 @@ pub struct Generator {
 impl Generator {
     pub fn new<T: AsRef<str>>(
         email: T,
+        persist_dir: T,
         staging: bool,
         updater: Box<dyn Updater + Send + Sync>,
     ) -> Self {
         Self {
             email: email.as_ref().to_string(),
+            persist_dir: persist_dir.as_ref().to_string(),
             staging,
             updater,
         }
@@ -52,7 +55,7 @@ impl Generator {
         };
         let record = format!("_acme-challenge.{suffix}");
 
-        let persist = MemoryPersist::new();
+        let persist = FilePersist::new(&self.persist_dir);
         let dir = Directory::from_url(persist, url)?;
 
         let account = dir.account(&self.email)?;
