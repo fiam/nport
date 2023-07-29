@@ -121,41 +121,38 @@ impl Builder {
         })
     }
 
-    fn domain_for_acme(&self) -> String {
-        if !self.acme_domain.is_empty() {
-            self.acme_domain.clone()
-        } else if !self.domain.is_empty() {
-            format!("*.{}", self.domain)
-        } else {
-            "".to_string()
-        }
-    }
-
     fn has_acme(&self) -> bool {
-        !self.acme_email.is_empty() && !self.domain_for_acme().is_empty()
+        !self.acme_email.is_empty() && !self.acme_domain.is_empty()
     }
 
     fn has_cloudflare(&self) -> bool {
         !self.cloudflare_zone_id.is_empty() && !self.cloudflare_api_token.is_empty()
     }
 
+    fn enable_cert_store(&self) -> bool {
+        if !self.has_acme() {
+            tracing::debug!("no ACME config found, disabling cert store");
+            return false;
+        }
+        if self.certs_dir.is_empty() {
+            tracing::debug!("no certs dir found, disabling cert store");
+            return false;
+        }
+
+        if !self.has_cloudflare() {
+            tracing::debug!("no cloudflare config found, disabling cert store");
+        }
+        true
+    }
+
     async fn cert_store(&self) -> Result<Option<Arc<Store>>> {
-        if self.has_acme() && !self.certs_dir.is_empty() && self.has_cloudflare() {
+        if self.enable_cert_store() {
             let updater = Box::new(CloudflareUpdater::new(
                 &self.cloudflare_api_token,
                 &self.cloudflare_zone_id,
             ));
-            let generator = Generator::new(
-                &self.acme_email,
-                &self.domain_for_acme(),
-                self.acme_staging,
-                updater,
-            );
-            let store = Store::new(
-                &self.certs_dir,
-                &self.domain_for_acme(),
-                Arc::new(generator),
-            );
+            let generator = Generator::new(&self.acme_email, self.acme_staging, updater);
+            let store = Store::new(&self.certs_dir, &self.acme_domain, Arc::new(generator));
             store.load().await?;
             Ok(Some(Arc::new(store)))
         } else {

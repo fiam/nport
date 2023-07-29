@@ -15,7 +15,7 @@ use rustls::{
 use serde::{Deserialize, Serialize};
 use time::{Date, Duration, OffsetDateTime};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 use x509_parser::prelude::{FromDer, X509Certificate};
 
 use super::generator::Generator;
@@ -68,10 +68,18 @@ impl Store {
         }
     }
 
+    fn root_domain(&self) -> &str {
+        &self.domain
+    }
+
+    fn wildcard_domain(&self) -> String {
+        format!("*.{}", self.domain)
+    }
+
     pub fn update_cert(&self, domain: &str, cert: &acme_lib::Certificate) {
         self.add(domain, cert.private_key_der(), cert.certificate_der());
         if let Err(err) = self.store_cert(domain, cert) {
-            error!(error=?err, domain=domain, "storing certificate");
+            tracing::error!(error=?err, domain=domain, "storing certificate");
         }
     }
 
@@ -86,7 +94,7 @@ impl Store {
     }
 
     fn cert_filename(&self, domain: &str) -> String {
-        domain.replace('*', "STAR")
+        domain.to_lowercase().replace('*', "STAR")
     }
 
     fn store_cert(&self, domain: &str, cert: &acme_lib::Certificate) -> Result<()> {
@@ -105,9 +113,9 @@ impl Store {
         Ok(())
     }
 
-    fn should_renew(&self) -> bool {
+    fn should_renew_cert(&self, domain: &str) -> bool {
         let certs = self.certs.read().unwrap();
-        let cert = certs.get(&self.domain);
+        let cert = certs.get(domain);
         match cert {
             Some(cert) => match cert_expiration(cert.cert[0].as_ref()) {
                 Ok(expiration) => {
@@ -124,6 +132,11 @@ impl Store {
             },
             None => true,
         }
+    }
+
+    fn should_renew(&self) -> bool {
+        self.should_renew_cert(self.root_domain())
+            || self.should_renew_cert(&self.wildcard_domain())
     }
 
     pub async fn load(&self) -> Result<()> {
@@ -149,12 +162,23 @@ impl Store {
         Ok(())
     }
 
+    async fn renew_cert(&self, domain: &str) -> Result<()> {
+        let cert = self.generator.request(domain).await?;
+        self.update_cert(domain, &cert);
+        tracing::info!(domain, "renewed cert");
+        Ok(())
+    }
+
     pub async fn renew(&self) -> Result<()> {
         if self.should_renew() {
             let _guard = self.renewal_lock.lock().await;
-            let cert = self.generator.request().await?;
-            self.update_cert(&self.domain, &cert);
-            info!(domain = self.domain, "renewed cert");
+            for domain in [self.root_domain(), &self.wildcard_domain()] {
+                // Don't request these in parallel, since requesting a wildcard
+                // will use the same CNAME challenge as the root (e.g. *.example and example.com)
+                if self.should_renew_cert(domain) {
+                    self.renew_cert(domain).await?;
+                }
+            }
         }
         Ok(())
     }

@@ -28,7 +28,7 @@ mod tests {
         }
         let updater = Box::new(cloudflare::Updater::new(&token, &zone_id));
 
-        let cert = generator::Generator::new(email, domain, true, updater);
-        cert.request().await.unwrap();
+        let cert = generator::Generator::new(email, true, updater);
+        cert.request(&domain).await.unwrap();
     }
 }

@@ -12,7 +12,6 @@ use super::dns::Updater;
 
 pub struct Generator {
     email: String,
-    domain: String,
     staging: bool,
     updater: Box<dyn Updater + Send + Sync>,
 }
@@ -20,13 +19,11 @@ pub struct Generator {
 impl Generator {
     pub fn new<T: AsRef<str>>(
         email: T,
-        domain: T,
         staging: bool,
         updater: Box<dyn Updater + Send + Sync>,
     ) -> Self {
         Self {
             email: email.as_ref().to_string(),
-            domain: domain.as_ref().to_string(),
             staging,
             updater,
         }
@@ -40,17 +37,18 @@ impl Generator {
         Ok(response.into_iter().map(|r| r.to_string()).collect())
     }
 
-    pub async fn request(&self) -> Result<Certificate, anyhow::Error> {
+    pub async fn request(&self, domain: &str) -> Result<Certificate, anyhow::Error> {
+        tracing::debug!(domain, "requesting cert");
         let url = if self.staging {
             DirectoryUrl::LetsEncryptStaging
         } else {
             DirectoryUrl::LetsEncrypt
         };
 
-        let suffix = if self.domain.starts_with("*.") {
-            &self.domain[2..self.domain.len()]
+        let suffix = if domain.starts_with("*.") {
+            &domain[2..domain.len()]
         } else {
-            &self.domain
+            domain
         };
         let record = format!("_acme-challenge.{suffix}");
 
@@ -59,7 +57,7 @@ impl Generator {
 
         let account = dir.account(&self.email)?;
 
-        let mut ord_new = account.new_order(&self.domain, &[])?;
+        let mut ord_new = account.new_order(domain, &[])?;
 
         let ord_csr = loop {
             if let Some(ord_csr) = ord_new.confirm_validations() {
@@ -71,7 +69,7 @@ impl Generator {
             let challenge = auths[0].dns_challenge();
 
             let token = challenge.dns_proof();
-            debug!(token, "DNS challenge");
+            debug!(domain, token, "DNS challenge");
             self.updater.update(&record, &token).await?;
 
             // Wait until the TXT lookup is propagated
