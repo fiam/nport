@@ -1,0 +1,16 @@
+# /etc/systemd/system/nport-server.service
+[Unit]
+Description=nport server
+Requires=docker.service
+After=docker.service
+
+# /app/env must contain CLOUDFLARE_API_TOKEN=<token>
+# /app/acme must be created beforehand
+
+[Service]
+Restart=always
+ExecStart=docker run --rm --name nport-server -v /app/certs:/certs -v /app/acme:/acme --env-file /app/env --net=host nport-server
+ExecStop=docker stop -t 2 nport-server
+
+[Install]
+WantedBy=multi-user.target
