@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use acme_lib::{create_p384_key, persist::FilePersist, Certificate, Directory, DirectoryUrl};
 use tokio::time::{sleep, Instant};
@@ -12,21 +15,21 @@ use super::dns::Updater;
 
 pub struct Generator {
     email: String,
-    persist_dir: String,
+    persist_dir: PathBuf,
     staging: bool,
     updater: Box<dyn Updater + Send + Sync>,
 }
 
 impl Generator {
-    pub fn new<T: AsRef<str>>(
-        email: T,
-        persist_dir: T,
+    pub fn new<S: AsRef<str>, P: AsRef<Path>>(
+        email: S,
+        persist_dir: P,
         staging: bool,
         updater: Box<dyn Updater + Send + Sync>,
     ) -> Self {
         Self {
             email: email.as_ref().to_string(),
-            persist_dir: persist_dir.as_ref().to_string(),
+            persist_dir: persist_dir.as_ref().to_path_buf(),
             staging,
             updater,
         }
