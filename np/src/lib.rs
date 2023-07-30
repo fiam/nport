@@ -71,9 +71,13 @@ pub async fn run() {
 
     let client = Arc::new(Client::new());
 
-    match client.connect(&s.server.hostname).await {
+    match client.connect(&s.server.hostname, s.server.secure).await {
         Ok(()) => {
-            tracing::info!(server = s.server.hostname, "connected");
+            tracing::info!(
+                server = s.server.hostname,
+                secure = s.server.secure,
+                "connected"
+            );
         }
         Err(error) => {
             tracing::error!(error=?error, server=s.server.hostname, "can't connect to server");

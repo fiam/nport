@@ -38,7 +38,7 @@ async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::S
 async fn connected_client(server_port: u16) -> Arc<np::client::Client> {
     let client = Arc::new(np::client::Client::new());
     client
-        .connect(&format!("localhost:{}", server_port))
+        .connect(&format!("localhost:{server_port}"), false)
         .await
         .unwrap();
     client
@@ -104,7 +104,7 @@ async fn it_connects() {
     let (server_task, server_stop) = start_server(SERVER_PORT).await;
     let client = np::client::Client::new();
     client
-        .connect(&format!("localhost:{}", SERVER_PORT))
+        .connect(&format!("localhost:{}", SERVER_PORT), false)
         .await
         .unwrap();
     drop(client);

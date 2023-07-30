@@ -14,7 +14,7 @@ tokio = { version = "1.24.2", features = [
     "time",
     "sync",
 ] }
-tokio-tungstenite = "0.18.0"
+tokio-tungstenite = { version = "0.18.0", features = ["native-tls"] }
 thiserror = "1.0.38"
 async-trait = "0.1.64"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "std"] }

@@ -28,11 +28,11 @@ impl HttpOpened {
         }
     }
 
-    pub fn failed(result: HttpOpenResult) -> Self {
+    pub fn failed(hostname: &str, local_port: u16, result: HttpOpenResult) -> Self {
         assert!(result != HttpOpenResult::Ok);
         Self {
-            hostname: "".to_owned(),
-            local_port: 0,
+            hostname: hostname.to_string(),
+            local_port,
             result,
         }
     }

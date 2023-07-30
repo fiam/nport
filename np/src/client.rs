@@ -94,8 +94,9 @@ impl Client {
         }
     }
 
-    pub async fn connect(&self, server: &str) -> Result<()> {
-        let server_url = format!("ws://{0}/v1/connect", server);
+    pub async fn connect(&self, server: &str, secure: bool) -> Result<()> {
+        let protocol = if secure { "wss" } else { "ws" };
+        let server_url = format!("{protocol}://{server}/v1/connect");
         let (stream, response) = connect_async(server_url).await?;
         tracing::debug!(response=?response, "connected to server");
         let (sender, receiver) = stream.split();

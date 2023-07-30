@@ -26,6 +26,7 @@ pub enum Tunnel {
 #[derive(Debug, Deserialize)]
 pub struct Server {
     pub hostname: String,
+    pub secure: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +41,8 @@ impl Settings {
     pub fn new(use_config_file: bool) -> Result<Self, ConfigError> {
         let mut builder = Config::builder()
             .set_default("server.hostname", DEFAULT_SERVER)
+            .unwrap()
+            .set_default("server.secure", true)
             .unwrap()
             .add_source(
                 Environment::with_prefix("NP")
