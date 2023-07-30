@@ -16,6 +16,8 @@ pub async fn open(
         if !hostname::is_valid(&open.hostname) || open.hostname.contains('.') {
             return client
                 .send(&server::Message::HttpOpened(server::HttpOpened::failed(
+                    &open.hostname,
+                    open.local_port,
                     server::HttpOpenResult::Invalid,
                 )))
                 .await;
@@ -38,6 +40,8 @@ pub async fn open(
     {
         return client
             .send(&server::Message::HttpOpened(server::HttpOpened::failed(
+                &hostname,
+                open.local_port,
                 server::HttpOpenResult::InUse,
             )))
             .await;

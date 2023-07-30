@@ -75,6 +75,7 @@ pub struct Server {
     https_port: u16,
     public_https_port: u16,
     domain: String,
+    api_domain: String,
     cert_store: Option<Arc<cert::Store>>,
     client_request_timeout_secs: u16,
     http_shutdown: Mutex<Option<oneshot::Sender<()>>>,
@@ -82,19 +83,32 @@ pub struct Server {
 }
 
 impl Server {
-    fn public_hostname(&self) -> String {
-        if self.domain.is_empty() {
-            self.bind_addr.to_string()
-        } else {
-            self.domain.to_string()
+    fn main_hostname(&self) -> String {
+        if !self.domain.is_empty() {
+            return self.domain.to_string();
         }
+        self.bind_addr.to_string()
+    }
+
+    fn api_hostname(&self) -> String {
+        if !self.api_domain.is_empty() {
+            return self.api_domain.to_string();
+        }
+        self.main_hostname()
     }
 
     fn build_app(&self, state: SharedState) -> Router {
-        let host_router = Router::new()
-            .route("/v1/connect", get(handlers::websocket))
+        let main_router = Router::new()
             .route("/", get(handlers::home))
             .route("/build_info.json", get(handlers::build_info))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                to_tls_middleware,
+            ))
+            .with_state(state.clone());
+
+        let api_router = Router::new()
+            .route("/v1/connect", get(handlers::websocket))
             .route_layer(middleware::from_fn_with_state(
                 state.clone(),
                 to_tls_middleware,
@@ -106,7 +120,8 @@ impl Server {
             .route("/*path", any(handlers::forward))
             .with_state(state.clone());
 
-        let public_hostname = self.public_hostname();
+        let main_hostname = self.main_hostname();
+        let api_hostname = self.api_hostname();
 
         let chooser = |Host(hostname): Host, request: Request<Body>| async move {
             // Split port
@@ -115,12 +130,15 @@ impl Server {
             } else {
                 &hostname
             };
-            tracing::debug!(host, public_hostname, "routing request");
-            let router = if host == public_hostname {
-                tracing::debug!(host, "routing request to main");
-                host_router
+            tracing::debug!(host, main_hostname, api_hostname, "routing request");
+            let router = if host == api_hostname {
+                tracing::trace!(host, "routing request to api");
+                api_router
+            } else if host == main_hostname {
+                tracing::trace!(host, "routing request to main");
+                main_router
             } else {
-                tracing::debug!(host, "routing request to forwarding");
+                tracing::trace!(host, "routing request to forwarding");
                 forwarding_router
             };
             router.oneshot(request).await
@@ -193,7 +211,7 @@ impl Server {
             self.https_port,
             self.public_https_port,
             &self.domain,
-            &self.public_hostname(),
+            &self.main_hostname(),
             self.client_request_timeout_secs,
         ));
 

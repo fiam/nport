@@ -36,6 +36,9 @@ async fn main() {
     if let Ok(val) = env::var("DOMAIN") {
         builder = builder.domain(val);
     }
+    if let Ok(val) = env::var("API_DOMAIN") {
+        builder = builder.api_domain(val);
+    }
     if let Ok(val) = env::var("CERTS_DIR") {
         builder = builder.certs_dir(val);
     }

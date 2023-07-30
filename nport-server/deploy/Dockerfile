@@ -30,6 +30,7 @@ ENV PUBLIC_HTTPS_PORT=443
 ENV CERTS_DIR=/certs
 ENV ACME_STAGING=false
 ENV DOMAIN=nport.io
+ENV API_DOMAIN=api.nport.io
 ENV ACME_EMAIL=alberto@garciahierro.com
 ENV ACME_PERSIST_DIR=/acme
 ENV ACME_DOMAIN=nport.io

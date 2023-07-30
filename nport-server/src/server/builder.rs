@@ -17,6 +17,7 @@ pub struct Builder {
     https_port: u16,
     public_https_port: u16,
     domain: String,
+    api_domain: String,
     certs_dir: String,
     acme_email: String,
     acme_persist_dir: String,
@@ -55,6 +56,11 @@ impl Builder {
 
     pub fn domain<T: AsRef<str>>(mut self, domain: T) -> Self {
         self.domain = domain.as_ref().to_string();
+        self
+    }
+
+    pub fn api_domain<T: AsRef<str>>(mut self, domain: T) -> Self {
+        self.api_domain = domain.as_ref().to_string();
         self
     }
 
@@ -120,6 +126,7 @@ impl Builder {
             https_port: self.https_port,
             public_https_port: self.public_https_port,
             domain: self.domain,
+            api_domain: self.api_domain,
             cert_store,
             client_request_timeout_secs,
             http_shutdown: Mutex::new(None),
