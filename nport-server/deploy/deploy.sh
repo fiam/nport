@@ -11,4 +11,5 @@ docker buildx build \
     -f nport-server/deploy/Dockerfile . \
     -t nport-server:latest 
 
-docker save nport-server:latest | bzip2 | ssh ${DEST} docker load    
+docker save nport-server:latest | bzip2 | ssh ${DEST} docker load
+ssh ${DEST} systemctl restart nport-server
