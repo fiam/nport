@@ -1316,6 +1316,7 @@ dependencies = [
  "config",
  "futures-util",
  "hyper",
+ "hyper-tls",
  "libnp",
  "serde",
  "thiserror",

@@ -23,3 +23,4 @@ clap = { version = "4.3.0", features = ["derive"] }
 hyper = { version = "0.14.24", features = ["tcp", "client", "http1", "http2"] }
 config = "0.13.3"
 serde = "1.0.163"
+hyper-tls = "0.5.0"

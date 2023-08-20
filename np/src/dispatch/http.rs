@@ -1,7 +1,11 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use hyper::http::{HeaderName, HeaderValue};
+use hyper::{
+    client::Client as HyperClient,
+    http::{HeaderName, HeaderValue},
+};
+use hyper_tls::HttpsConnector;
 
 use crate::client::Client;
 use crate::error::Result;
@@ -38,7 +42,8 @@ async fn send_request(
         Ok(())
     })?;
 
-    let http_client = hyper::client::Client::new();
+    let https = HttpsConnector::new();
+    let http_client = HyperClient::builder().build::<_, hyper::Body>(https);
     let http_response = http_client
         .request(request)
         .await
