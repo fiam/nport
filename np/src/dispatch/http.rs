@@ -5,10 +5,35 @@ use hyper::{
     client::Client as HyperClient,
     http::{HeaderName, HeaderValue},
 };
-use hyper_tls::HttpsConnector;
 
 use crate::client::Client;
 use crate::error::Result;
+
+#[cfg(all(feature = "native-tls", feature = "rustls"))]
+compile_error!(
+    "Both features \"native-tls\" and \"rustls\" can't be enabled at the same time for this crate."
+);
+
+#[cfg(all(not(feature = "native-tls"), not(feature = "rustls")))]
+compile_error!("Either feature \"native-tls\" or \"rustls\" must be enabled for this crate.");
+
+#[cfg(feature = "native-tls")]
+fn new_http_client() -> HyperClient<hyper_tls::HttpsConnector<hyper::client::HttpConnector>> {
+    let https = hyper_tls::HttpsConnector::new();
+    HyperClient::builder().build::<_, hyper::Body>(https)
+}
+
+#[cfg(feature = "rustls")]
+fn new_http_client() -> HyperClient<hyper_rustls::HttpsConnector<hyper::client::HttpConnector>> {
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .https_or_http()
+        .enable_http1()
+        .enable_http2()
+        .build();
+
+    HyperClient::builder().build::<_, hyper::Body>(https)
+}
 
 async fn send_request(
     client: Arc<Client>,
@@ -42,8 +67,7 @@ async fn send_request(
         Ok(())
     })?;
 
-    let https = HttpsConnector::new();
-    let http_client = HyperClient::builder().build::<_, hyper::Body>(https);
+    let http_client = new_http_client();
     let http_response = http_client
         .request(request)
         .await
