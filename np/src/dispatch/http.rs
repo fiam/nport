@@ -9,11 +9,6 @@ use hyper::{
 use crate::client::Client;
 use crate::error::Result;
 
-#[cfg(all(feature = "native-tls", feature = "rustls"))]
-compile_error!(
-    "Both features \"native-tls\" and \"rustls\" can't be enabled at the same time for this crate."
-);
-
 #[cfg(all(not(feature = "native-tls"), not(feature = "rustls")))]
 compile_error!("Either feature \"native-tls\" or \"rustls\" must be enabled for this crate.");
 
@@ -23,7 +18,8 @@ fn new_http_client() -> HyperClient<hyper_tls::HttpsConnector<hyper::client::Htt
     HyperClient::builder().build::<_, hyper::Body>(https)
 }
 
-#[cfg(feature = "rustls")]
+// native-tls takes priority
+#[cfg(all(feature = "rustls", not(feature = "native-tls")))]
 fn new_http_client() -> HyperClient<hyper_rustls::HttpsConnector<hyper::client::HttpConnector>> {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()
