@@ -25,7 +25,7 @@ jobs:
         run: |
           release_name=${{ steps.name.outputs.release_name }}
           is_prerelease=false
-          if [[ $string =~ "alpha" ]] || [[ $string =~ "beta" ]] || ; then
+          if [[ ${release_name} =~ "alpha" ]] || [[ ${release_name} =~ "beta" ]]; then
             is_prerelease=true
           fi
           echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
