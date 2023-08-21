@@ -56,7 +56,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install cross
-        run: cargo install cross --force --git https://github.com/cross-rs/cross
+        run: which cross || cargo install cross --force --git https://github.com/cross-rs/cross
 
       - name: Create dist directory
         run: mkdir -p dist
