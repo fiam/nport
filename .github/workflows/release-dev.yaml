@@ -1,0 +1,86 @@
+on:
+  workflow_dispatch:
+name: Release NP client
+jobs:
+  build-linux-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Find release suffix
+        shell: bash
+        run: echo "RELEASE_SUFFIX=$((git describe --exact-match --tags HEAD || git rev-parse --short HEAD) 2>| /dev/null)" >> $GITHUB_ENV
+
+      - name: Set up cargo cache
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cross
+        run: cargo install cross --force --git https://github.com/cross-rs/cross
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build windows/amd64
+        run: cross build -p np --release --target x86_64-pc-windows-gnu
+
+      - name: Create windows/amd64 zip
+        run: mv target/x86_64-pc-windows-gnu/release/np.exe dist && cd dist && zip -9 np-windows-${{ env.RELEASE_SUFFIX }}.zip np.exe
+
+      - name: Build linux/amd64
+        run: cross build -p np --release --target x86_64-unknown-linux-gnu
+
+      - name: Create linux/amd64 tar.gz
+        run: mv target/x86_64-unknown-linux-gnu/release/np dist && cd dist && tar -czvf np-linux-amd64-${{ env.RELEASE_SUFFIX }}.tar.gz np
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Find release suffix
+        shell: bash
+        run: echo "RELEASE_SUFFIX=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set up cargo cache
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -ysSf | sh
+
+      - name: Add toolchains
+        run: rustup target add x86_64-apple-darwin && rustup target add aarch64-apple-darwin
+
+      - name: Build amd64
+        run: cargo build -p np --release --target=x86_64-apple-darwin
+
+      - name: Build aarch64
+        run: cargo build -p np --release --target=aarch64-apple-darwin
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build fat binary
+        run: lipo -create -output dist/np target/aarch64-apple-darwin/release/np target/x86_64-apple-darwin/release/np
+
+      - name: Create zip
+        run: cd dist && zip -9 np-macOS-${{ env.RELEASE_SUFFIX }}.zip np
