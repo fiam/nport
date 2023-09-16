@@ -17,7 +17,7 @@ pub async fn open(
             return client
                 .send(&server::Message::HttpOpened(server::HttpOpened::failed(
                     &open.hostname,
-                    open.local_port,
+                    &open.local_addr,
                     server::HttpOpenResult::Invalid,
                 )))
                 .await;
@@ -41,7 +41,7 @@ pub async fn open(
         return client
             .send(&server::Message::HttpOpened(server::HttpOpened::failed(
                 &hostname,
-                open.local_port,
+                &open.local_addr,
                 server::HttpOpenResult::InUse,
             )))
             .await;
@@ -50,7 +50,7 @@ pub async fn open(
     client
         .send(&server::Message::HttpOpened(server::HttpOpened::ok(
             &hostname,
-            open.local_port,
+            &open.local_addr,
         )))
         .await
 }

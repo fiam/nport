@@ -38,11 +38,10 @@ async fn send_request(
     use hyper::{http::Request, Method};
     use libnp::client::HttpResponseError;
 
-    let port = match client.http_port(&req.hostname).await {
-        None => return Err(HttpResponseError::NotRegistered),
-        Some(port) => port,
+    let Some(addr) = client.http_port(&req.hostname).await else {
+        return Err(HttpResponseError::NotRegistered);
     };
-    let uri = format!("http://localhost:{}{}", port, req.uri);
+    let uri = format!("http://{}{}", addr, req.uri);
     let method = Method::from_bytes(req.method.as_bytes())
         .map_err(|e| HttpResponseError::InvalidMethod(e.to_string()))?;
     let body = hyper::Body::from(req.body.clone());

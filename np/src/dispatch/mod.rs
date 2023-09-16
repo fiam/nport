@@ -16,7 +16,7 @@ pub async fn message(client: Arc<Client>, msg: libnp::server::Message) -> Result
             } else {
                 tracing::info!(
                     hostname = opened.hostname,
-                    local_port = opened.local_port,
+                    local_addr = ?opened.local_addr,
                     "HTTP host created"
                 )
             }
@@ -34,11 +34,11 @@ pub async fn message(client: Arc<Client>, msg: libnp::server::Message) -> Result
         }
         server::Message::PortOpened(opened) => {
             if let Err(err) = client.port_register(&opened).await {
-                tracing::error!(error=?err,origin=opened.origin(), local_port=opened.local_port, "registering port forwarding");
+                tracing::error!(error=?err,origin=opened.origin(), local_addr=?opened.local_addr, "registering port forwarding");
             } else {
                 tracing::info!(
                     origin = opened.origin(),
-                    local_port = opened.local_port,
+                    local_addr = ?opened.local_addr,
                     "port forwarding created"
                 )
             }

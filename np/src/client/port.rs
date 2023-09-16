@@ -7,7 +7,7 @@ use tokio::{
     time::timeout,
 };
 
-use libnp::common::PortMessage;
+use libnp::{common::PortMessage, Addr};
 
 use crate::error::Result;
 
@@ -98,9 +98,9 @@ fn client_port(
     });
 }
 
-pub async fn start(client: Arc<Client>, uuid: &str, addr: &str) -> Result<()> {
-    tracing::trace!(uuid, addr, "connecting to port forwarding");
-    let stream = TcpStream::connect(addr).await?;
+pub async fn start(client: Arc<Client>, uuid: &str, addr: Addr) -> Result<()> {
+    tracing::trace!(uuid, ?addr, "connecting to port forwarding");
+    let stream = TcpStream::connect(addr.to_string()).await?;
     let (message_sender, message_receiver) = mpsc::channel::<PortMessage>(1);
     client.port_writer_register(uuid, message_sender).await?;
     client_port(Arc::downgrade(&client), stream, message_receiver, uuid);

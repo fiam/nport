@@ -30,7 +30,7 @@ pub async fn open(
             protocol: open.protocol,
             hostname: state.hostname().to_string(),
             port: result.1,
-            local_port: open.local_port,
+            local_addr: open.local_addr,
             result: result.0,
         }))
         .await

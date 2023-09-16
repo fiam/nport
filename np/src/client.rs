@@ -10,6 +10,7 @@ use futures_util::StreamExt;
 use libnp::server::split_origin;
 use libnp::server::HttpOpenResult;
 use libnp::server::PortOpenResult;
+use libnp::Addr;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -27,7 +28,7 @@ pub mod port;
 #[derive(Debug)]
 pub struct HttpForwarding {
     hostname: String,
-    local_port: u16,
+    local_addr: Addr,
 }
 
 impl HttpForwarding {
@@ -35,8 +36,8 @@ impl HttpForwarding {
         &self.hostname
     }
 
-    pub fn local_port(&self) -> u16 {
-        self.local_port
+    pub fn local_addr(&self) -> &Addr {
+        &self.local_addr
     }
 }
 
@@ -45,7 +46,7 @@ pub struct PortForwarding {
     protocol: PortProtocol,
     hostname: String,
     remote_port: u16,
-    local_port: u16,
+    local_addr: Addr,
 }
 
 impl PortForwarding {
@@ -58,8 +59,8 @@ impl PortForwarding {
     pub fn remote_port(&self) -> u16 {
         self.remote_port
     }
-    pub fn local_port(&self) -> u16 {
-        self.local_port
+    pub fn local_addr(&self) -> &Addr {
+        &self.local_addr
     }
 }
 
@@ -69,10 +70,10 @@ struct Connection {
 }
 
 pub struct Client {
-    // hostname => local_port
-    http_forwardings: RwLock<HashMap<String, u16>>,
-    // protocol:hostname:remote_port => local port
-    port_forwardings: RwLock<HashMap<String, u16>>,
+    // hostname => local_addr
+    http_forwardings: RwLock<HashMap<String, Addr>>,
+    // protocol:hostname:remote_port => local addr
+    port_forwardings: RwLock<HashMap<String, Addr>>,
     // port uuid => queue
     port_writers: RwLock<HashMap<String, mpsc::Sender<PortMessage>>>,
     connection: RwLock<Option<Connection>>,
@@ -113,10 +114,10 @@ impl Client {
         Ok(())
     }
 
-    pub async fn http_open(&self, hostname: &str, local_port: u16) -> Result<()> {
+    pub async fn http_open(&self, hostname: &str, local_addr: &Addr) -> Result<()> {
         let msg = libnp::client::Message::HttpOpen(libnp::client::HttpOpen {
             hostname: hostname.to_owned(),
-            local_port,
+            local_addr: local_addr.clone(),
         });
         self.send(&msg).await
     }
@@ -127,7 +128,7 @@ impl Client {
                 let hostname = msg.hostname.clone();
                 let mut http_forwardings = self.http_forwardings.write().await;
                 if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
-                    entry.insert(msg.local_port);
+                    entry.insert(msg.local_addr.clone());
                     Ok(())
                 } else {
                     Err(Error::HttpHostnameAlreadyRegistered(hostname))
@@ -147,12 +148,12 @@ impl Client {
         Err(Error::HttpHostnameNotRegistered(msg.hostname.clone()))
     }
 
-    pub async fn http_port(&self, hostname: &str) -> Option<u16> {
-        self.http_forwardings.read().await.get(hostname).copied()
+    pub async fn http_port(&self, hostname: &str) -> Option<Addr> {
+        self.http_forwardings.read().await.get(hostname).cloned()
     }
 
-    pub async fn tcp_open(&self, hostname: &str, port: u16, local_port: u16) -> Result<()> {
-        self.port_open(PortProtocol::Tcp, hostname, port, local_port)
+    pub async fn tcp_open(&self, hostname: &str, port: u16, local_addr: &Addr) -> Result<()> {
+        self.port_open(PortProtocol::Tcp, hostname, port, local_addr)
             .await
     }
 
@@ -161,13 +162,13 @@ impl Client {
         protocol: PortProtocol,
         hostname: &str,
         port: u16,
-        local_port: u16,
+        local_addr: &Addr,
     ) -> Result<()> {
         let msg = libnp::client::Message::PortOpen(libnp::client::PortOpen {
             protocol,
             hostname: hostname.to_owned(),
             port,
-            local_port,
+            local_addr: local_addr.clone(),
         });
         self.send(&msg).await
     }
@@ -178,7 +179,7 @@ impl Client {
                 let origin = msg.origin();
                 let mut port_forwardings = self.port_forwardings.write().await;
                 if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
-                    entry.insert(msg.local_port);
+                    entry.insert(msg.local_addr.clone());
                     Ok(())
                 } else {
                     Err(Error::PortOriginAlreadyRegistered(origin))
@@ -216,16 +217,14 @@ impl Client {
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(String, String) -> Future,
+        F: FnOnce(String, Addr) -> Future,
         Future: std::future::Future<Output = Result<()>>,
     {
         let origin = msg.origin();
-        let local_port = match self.port_forwardings.read().await.get(&origin) {
-            None => return Err(Error::PortOriginNotRegistered(origin)),
-            Some(port) => *port,
+        let Some(local_addr) = self.port_forwardings.read().await.get(&origin).cloned() else {
+            return Err(Error::PortOriginNotRegistered(origin));
         };
-        let addr = format!("127.0.0.1:{local_port}");
-        f(msg.uuid.clone(), addr).await
+        f(msg.uuid.clone(), local_addr).await
     }
 
     async fn port_message(&self, uuid: &str, msg: PortMessage) -> Result<()> {
@@ -282,7 +281,7 @@ impl Client {
         self.http_forwardings.read().await.iter().for_each(|entry| {
             forwardings.push(HttpForwarding {
                 hostname: entry.0.clone(),
-                local_port: *entry.1,
+                local_addr: entry.1.clone(),
             })
         });
         forwardings
@@ -296,7 +295,7 @@ impl Client {
                 protocol,
                 hostname,
                 remote_port: port,
-                local_port: *entry.1,
+                local_addr: entry.1.clone(),
             });
         });
         forwardings

@@ -9,7 +9,7 @@ pub async fn connect(client: Arc<Client>, connect: &libnp::server::PortConnect) 
     let client_copy = client.clone();
     let result = match client
         .port_connect(connect, |uuid, addr| async move {
-            crate::client::port::start(client_copy, &uuid, &addr).await
+            crate::client::port::start(client_copy, &uuid, addr).await
         })
         .await
     {

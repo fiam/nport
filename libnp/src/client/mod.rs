@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::{error::Result, PortProtocol};
+use crate::{error::Result, Addr, PortProtocol};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HttpOpen {
     pub hostname: String,
-    pub local_port: u16,
+    pub local_addr: Addr,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -59,7 +59,7 @@ pub struct PortOpen {
     pub protocol: PortProtocol,
     pub hostname: String,
     pub port: u16,
-    pub local_port: u16,
+    pub local_addr: Addr,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

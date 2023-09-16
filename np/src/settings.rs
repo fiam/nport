@@ -1,17 +1,18 @@
 use config::{Config, ConfigError, Environment, File};
+use libnp::Addr;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct HttpTunnel {
     pub hostname: Option<String>,
-    pub local_port: u16,
+    pub local_addr: Addr,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TcpTunnel {
     pub hostname: Option<String>,
-    pub local_port: u16,
     pub remote_port: Option<u16>,
+    pub local_addr: Addr,
 }
 
 #[derive(Debug, Deserialize)]

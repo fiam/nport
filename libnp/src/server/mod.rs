@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr};
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::{error::Result, Error, PortProtocol};
+use crate::{error::Result, Addr, Error, PortProtocol};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum HttpOpenResult {
@@ -15,24 +15,24 @@ pub enum HttpOpenResult {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HttpOpened {
     pub hostname: String,
-    pub local_port: u16,
+    pub local_addr: Addr,
     pub result: HttpOpenResult,
 }
 
 impl HttpOpened {
-    pub fn ok(hostname: &str, local_port: u16) -> Self {
+    pub fn ok(hostname: &str, local_addr: &Addr) -> Self {
         Self {
             hostname: hostname.to_owned(),
-            local_port,
+            local_addr: local_addr.clone(),
             result: HttpOpenResult::Ok,
         }
     }
 
-    pub fn failed(hostname: &str, local_port: u16, result: HttpOpenResult) -> Self {
+    pub fn failed(hostname: &str, local_addr: &Addr, result: HttpOpenResult) -> Self {
         assert!(result != HttpOpenResult::Ok);
         Self {
             hostname: hostname.to_string(),
-            local_port,
+            local_addr: local_addr.clone(),
             result,
         }
     }
@@ -93,7 +93,7 @@ pub struct PortOpened {
     pub protocol: PortProtocol,
     pub hostname: String,
     pub port: u16,
-    pub local_port: u16,
+    pub local_addr: Addr,
     pub result: PortOpenResult,
 }
 

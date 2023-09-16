@@ -1159,6 +1159,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "simple-error",
  "thiserror",
 ]
 
@@ -2158,6 +2159,12 @@ checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "simple-error"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8542b68b8800c3cda649d2c72d688b6907b30f1580043135d61669d4aad1c175"
 
 [[package]]
 name = "slab"

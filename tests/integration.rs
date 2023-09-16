@@ -1,7 +1,7 @@
-use std::{net::SocketAddr, str::FromStr, sync::Arc, time::SystemTime};
+use std::{sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
-use libnp::PortProtocol;
+use libnp::{Addr, PortProtocol};
 use np::client::Client;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -118,12 +118,15 @@ async fn it_forwards_http_requests() {
     const SERVER_PORT: u16 = 4001;
     let client_subdomain = "something";
     let client_hostname = "something.localhost";
-    let client_http_port = 11234;
+    let client_http_addr = Addr::from_port(11234);
     let (server_task, server_stop) = start_server(SERVER_PORT).await;
     let client = connected_client(SERVER_PORT).await;
 
     // This should be refused, since . is not allowed in the hostname
-    client.http_open("foo.bar", client_http_port).await.unwrap();
+    client
+        .http_open("foo.bar", &client_http_addr)
+        .await
+        .unwrap();
     client_message(client.clone()).await.unwrap();
     assert_eq!(0, client.http_forwardings().await.len());
 
@@ -132,7 +135,7 @@ async fn it_forwards_http_requests() {
     assert_eq!(404, resp.status());
 
     client
-        .http_open(client_subdomain, client_http_port)
+        .http_open(client_subdomain, &client_http_addr)
         .await
         .unwrap();
     // Receive opening message
@@ -140,13 +143,15 @@ async fn it_forwards_http_requests() {
     let forwardings = client.http_forwardings().await;
     assert_eq!(1, forwardings.len());
     assert_eq!(client_hostname, forwardings[0].hostname());
-    assert_eq!(client_http_port, forwardings[0].local_port());
+    assert_eq!(&client_http_addr, forwardings[0].local_addr());
 
     // If another client tries to register the same hostname, we should get an error.
     // Use a different local port intentionally
     let client2 = connected_client(SERVER_PORT).await;
+    let client2_http_addr = client_http_addr.with_port(client_http_addr.port() + 100);
+
     client2
-        .http_open(client_subdomain, client_http_port + 100)
+        .http_open(client_subdomain, &client2_http_addr)
         .await
         .unwrap();
     client_message(client2.clone()).await.unwrap();
@@ -169,7 +174,7 @@ async fn it_forwards_http_requests() {
     assert_eq!(502, resp.status());
 
     let http_server = httptest::ServerBuilder::new()
-        .bind_addr(SocketAddr::from_str(&format!("127.0.0.1:{}", client_http_port)).unwrap())
+        .bind_addr(client_http_addr.try_to_socket_addr().unwrap())
         .run()
         .unwrap();
 
@@ -236,12 +241,12 @@ async fn it_forwards_tcp_connections() {
     tracing_subscriber::fmt().with_env_filter("trace").init();
     const SERVER_PORT: u16 = 4002;
     // tracing_subscriber::fmt().with_env_filter("trace").init();
-    let client_tcp_port = 11235;
+    let client_local_addr = Addr::from_port(11235);
     let (server_task, server_stop) = start_server(SERVER_PORT).await;
     let client = connected_client(SERVER_PORT).await;
 
     // Opening port 0 should assign a random port
-    client.tcp_open("", 0, client_tcp_port).await.unwrap();
+    client.tcp_open("", 0, &client_local_addr).await.unwrap();
     client_message(client.clone()).await.unwrap();
 
     let forwardings = client.port_forwardings().await;
@@ -249,7 +254,7 @@ async fn it_forwards_tcp_connections() {
     assert_eq!(PortProtocol::Tcp, forwardings[0].protocol());
     assert_ne!("", forwardings[0].hostname());
     assert_ne!(0, forwardings[0].remote_port());
-    assert_eq!(client_tcp_port, forwardings[0].local_port());
+    assert_eq!(&client_local_addr, forwardings[0].local_addr());
 
     // Opening a second client on the same remote host:port should fail
     let client2 = connected_client(SERVER_PORT).await;
@@ -257,7 +262,7 @@ async fn it_forwards_tcp_connections() {
         .tcp_open(
             forwardings[0].hostname(),
             forwardings[0].remote_port(),
-            client_tcp_port,
+            &client_local_addr,
         )
         .await
         .unwrap();
@@ -287,7 +292,7 @@ async fn it_forwards_tcp_connections() {
             < 100
     );
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", client_tcp_port))
+    let listener = TcpListener::bind(client_local_addr.try_to_socket_addr().unwrap())
         .await
         .unwrap();
 

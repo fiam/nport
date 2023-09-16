@@ -6,6 +6,7 @@ mod settings;
 use std::sync::Arc;
 
 use clap::{ArgAction, Parser};
+use libnp::Addr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use client::Client;
@@ -53,14 +54,14 @@ pub async fn run() {
             Command::Http { local_port } => {
                 tunnels.push(settings::Tunnel::Http(settings::HttpTunnel {
                     hostname: args.hostname,
-                    local_port,
+                    local_addr: Addr::from_port(local_port),
                 }))
             }
             Command::Tcp { local_port } => {
                 tunnels.push(settings::Tunnel::Tcp(settings::TcpTunnel {
                     hostname: args.hostname,
-                    local_port,
                     remote_port: args.remote_port,
+                    local_addr: Addr::from_port(local_port),
                 }))
             }
         }
@@ -91,7 +92,7 @@ pub async fn run() {
         let result = match tunnel {
             settings::Tunnel::Http(http) => {
                 client
-                    .http_open(&http.hostname.unwrap_or_default(), http.local_port)
+                    .http_open(&http.hostname.unwrap_or_default(), &http.local_addr)
                     .await
             }
             settings::Tunnel::Tcp(tcp) => {
@@ -99,7 +100,7 @@ pub async fn run() {
                     .tcp_open(
                         &tcp.hostname.unwrap_or_default(),
                         tcp.remote_port.unwrap_or_default(),
-                        tcp.local_port,
+                        &tcp.local_addr,
                     )
                     .await
             }
