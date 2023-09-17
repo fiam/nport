@@ -246,7 +246,11 @@ async fn it_forwards_tcp_connections() {
     let client = connected_client(SERVER_PORT).await;
 
     // Opening port 0 should assign a random port
-    client.tcp_open("", 0, &client_local_addr).await.unwrap();
+    let remote_addr = Addr::from_port(0);
+    client
+        .tcp_open("", &remote_addr, &client_local_addr)
+        .await
+        .unwrap();
     client_message(client.clone()).await.unwrap();
 
     let forwardings = client.port_forwardings().await;
@@ -257,13 +261,10 @@ async fn it_forwards_tcp_connections() {
     assert_eq!(&client_local_addr, forwardings[0].local_addr());
 
     // Opening a second client on the same remote host:port should fail
+    let remote_addr2 = Addr::from_port(forwardings[0].remote_port());
     let client2 = connected_client(SERVER_PORT).await;
     client2
-        .tcp_open(
-            forwardings[0].hostname(),
-            forwardings[0].remote_port(),
-            &client_local_addr,
-        )
+        .tcp_open(forwardings[0].hostname(), &remote_addr2, &client_local_addr)
         .await
         .unwrap();
     client_message(client2.clone()).await.unwrap();

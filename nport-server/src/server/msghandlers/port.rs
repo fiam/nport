@@ -10,8 +10,9 @@ pub async fn open(
     open: libnp::client::PortOpen,
 ) -> Result<()> {
     use libnp::server;
-    // XXX: The hostname used for the port is always the server hostname for now
-    let result = match port_server::server(client.clone(), state.hostname(), open.port).await {
+    let result = match port_server::server(client.clone(), state.hostname(), &open.remote_addr)
+        .await
+    {
         Ok(port) => {
             tracing::debug!(port=?port, "TCP forwarding opened");
 
@@ -21,7 +22,7 @@ pub async fn open(
             (server::PortOpenResult::Ok, port_num)
         }
         Err(error) => {
-            tracing::warn!(port=open.port, error=?error, "failed to open TCP port forwarding");
+            tracing::warn!(remote_addr=?open.remote_addr, error=?error, "failed to open TCP port forwarding");
             (server::PortOpenResult::InUse, 0)
         }
     };

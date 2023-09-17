@@ -60,7 +60,7 @@ pub async fn run() {
             Command::Tcp { local_port } => {
                 tunnels.push(settings::Tunnel::Tcp(settings::TcpTunnel {
                     hostname: args.hostname,
-                    remote_port: args.remote_port,
+                    remote_addr: args.remote_port.map(Addr::from_port),
                     local_addr: Addr::from_port(local_port),
                 }))
             }
@@ -99,7 +99,7 @@ pub async fn run() {
                 client
                     .tcp_open(
                         &tcp.hostname.unwrap_or_default(),
-                        tcp.remote_port.unwrap_or_default(),
+                        &tcp.remote_addr.unwrap_or_default(),
                         &tcp.local_addr,
                     )
                     .await

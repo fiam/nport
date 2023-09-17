@@ -152,8 +152,13 @@ impl Client {
         self.http_forwardings.read().await.get(hostname).cloned()
     }
 
-    pub async fn tcp_open(&self, hostname: &str, port: u16, local_addr: &Addr) -> Result<()> {
-        self.port_open(PortProtocol::Tcp, hostname, port, local_addr)
+    pub async fn tcp_open(
+        &self,
+        hostname: &str,
+        remote_addr: &Addr,
+        local_addr: &Addr,
+    ) -> Result<()> {
+        self.port_open(PortProtocol::Tcp, hostname, remote_addr, local_addr)
             .await
     }
 
@@ -161,13 +166,13 @@ impl Client {
         &self,
         protocol: PortProtocol,
         hostname: &str,
-        port: u16,
+        remote_addr: &Addr,
         local_addr: &Addr,
     ) -> Result<()> {
         let msg = libnp::client::Message::PortOpen(libnp::client::PortOpen {
             protocol,
             hostname: hostname.to_owned(),
-            port,
+            remote_addr: remote_addr.clone(),
             local_addr: local_addr.clone(),
         });
         self.send(&msg).await

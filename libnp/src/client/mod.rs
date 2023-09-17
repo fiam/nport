@@ -58,7 +58,7 @@ impl HttpResponse {
 pub struct PortOpen {
     pub protocol: PortProtocol,
     pub hostname: String,
-    pub port: u16,
+    pub remote_addr: Addr,
     pub local_addr: Addr,
 }
 

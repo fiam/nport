@@ -23,7 +23,7 @@ fn is_loopback(addr: &str) -> bool {
 }
 
 /// An address with a hostname or IP and a port number
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Addr {
     host: Option<String>,
     port: u16,
@@ -41,6 +41,10 @@ impl Addr {
             Some(host.to_string())
         };
         Self { host, port }
+    }
+
+    pub fn has_host(&self) -> bool {
+        self.host.is_some()
     }
 
     pub fn port(&self) -> u16 {
@@ -125,14 +129,14 @@ impl<'de> Visitor<'de> for AddrVisitor {
     where
         E: de::Error,
     {
-        if v > 0 && v <= i64::from(u16::MAX) {
+        if v >= 0 && v <= i64::from(u16::MAX) {
             Ok(Addr {
                 host: None,
                 port: v as u16,
             })
         } else {
             Err(E::custom(format!(
-                "port number must be > 0 and < {}, not {}",
+                "port number must be >= 0 and < {}, not {}",
                 u16::MAX,
                 v
             )))

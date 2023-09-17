@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use libnp::{client::PortConnectedResult, common::PortMessage};
+use libnp::{client::PortConnectedResult, common::PortMessage, Addr};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -172,10 +172,11 @@ async fn serve_socket(
     ControlFlow::Continue(())
 }
 
-pub async fn server(client: Arc<Client>, hostname: &str, port: u16) -> Result<Port> {
+pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<Port> {
+    // TODO: Don't ignore host
+    let addr = format!("0.0.0.0:{}", addr.port());
     let client = Arc::downgrade(&client);
     let hostname = hostname.to_string();
-    let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
     let addr = listener.local_addr()?;
     tracing::debug!(addr=?addr, "listening on port");

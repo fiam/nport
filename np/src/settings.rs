@@ -11,7 +11,7 @@ pub struct HttpTunnel {
 #[derive(Debug, Deserialize)]
 pub struct TcpTunnel {
     pub hostname: Option<String>,
-    pub remote_port: Option<u16>,
+    pub remote_addr: Option<Addr>,
     pub local_addr: Addr,
 }
 
