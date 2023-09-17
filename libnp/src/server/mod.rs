@@ -85,7 +85,23 @@ pub fn split_origin(origin: &str) -> Result<(PortProtocol, String, u16)> {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum PortOpenResult {
     Ok,
-    InUse,
+    // Port or host:port is already in use
+    PortInUse,
+    // Port is not allowed
+    PortNotAllowed,
+    // Host is not allowed
+    HostNotAllowed,
+}
+
+impl std::fmt::Display for PortOpenResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PortOpenResult::Ok => write!(f, "ok"),
+            PortOpenResult::PortInUse => write!(f, "port is already in use"),
+            PortOpenResult::PortNotAllowed => write!(f, "port is not allowed"),
+            PortOpenResult::HostNotAllowed => write!(f, "hostname is not allowed"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -32,8 +32,8 @@ pub enum Error {
     PortIDAlreadyRegistered(String),
     #[error("Port ID {0} not registered")]
     PortIDNotRegistered(String),
-    #[error("Port {0} is already in use")]
-    PortRemoteAlreadyInUse(String),
+    #[error("Could not allocate remote port {0}: {1}")]
+    RemotePortNotAllocated(String, String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -179,18 +179,19 @@ impl Client {
     }
 
     pub async fn port_register(&self, msg: &libnp::server::PortOpened) -> Result<()> {
-        match msg.result {
-            PortOpenResult::Ok => {
-                let origin = msg.origin();
-                let mut port_forwardings = self.port_forwardings.write().await;
-                if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
-                    entry.insert(msg.local_addr.clone());
-                    Ok(())
-                } else {
-                    Err(Error::PortOriginAlreadyRegistered(origin))
-                }
-            }
-            PortOpenResult::InUse => Err(Error::PortRemoteAlreadyInUse(msg.origin())),
+        let PortOpenResult::Ok = msg.result else {
+            return Err(Error::RemotePortNotAllocated(
+                msg.origin(),
+                msg.result.to_string(),
+            ));
+        };
+        let origin = msg.origin();
+        let mut port_forwardings = self.port_forwardings.write().await;
+        if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
+            entry.insert(msg.local_addr.clone());
+            Ok(())
+        } else {
+            Err(Error::PortOriginAlreadyRegistered(origin))
         }
     }
 
