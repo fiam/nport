@@ -194,25 +194,27 @@ impl ResolvesServerCert for Store {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
         let sni = client_hello.server_name();
         tracing::debug!(sni, "resolve cert");
-        if let Some(name) = client_hello.server_name() {
-            let top_level = format!(
-                "*.{}",
-                name.split('.').skip(1).collect::<Vec<_>>().join(".")
-            );
-            let certs = self.certs.read().unwrap();
-            if let Some(cert) = certs
-                .get(&top_level)
-                .or_else(|| certs.get(name))
-                .or_else(|| certs.get(&self.domain))
-            {
-                tracing::trace!(cert=?cert.cert, "using cert");
-                // TODO: Refresh if needed
-                return Some(cert.clone());
-            }
-            tracing::warn!(name, "no appropriate cert found");
+        let server_name = if let Some(name) = sni {
+            name
         } else {
             tracing::warn!("hello without name");
+            &self.domain
+        };
+        let top_level = format!(
+            "*.{}",
+            server_name.split('.').skip(1).collect::<Vec<_>>().join(".")
+        );
+        let certs = self.certs.read().unwrap();
+        if let Some(cert) = certs
+            .get(&top_level)
+            .or_else(|| certs.get(server_name))
+            .or_else(|| certs.get(&self.domain))
+        {
+            tracing::trace!(cert=?cert.cert, "using cert");
+            // TODO: Refresh if needed
+            return Some(cert.clone());
         }
+        tracing::warn!(server_name, "no appropriate cert found");
         None
     }
 }

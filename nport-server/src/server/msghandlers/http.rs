@@ -28,10 +28,11 @@ pub async fn open(
             .next()
             .unwrap()
     };
-    let hostname = if state.domain().is_empty() {
+    let domain = state.hostnames().domain();
+    let hostname = if domain.is_empty() {
         subdomain
     } else {
-        format!("{}.{}", subdomain, state.domain())
+        format!("{}.{}", subdomain, domain)
     };
     if !state
         .registry()

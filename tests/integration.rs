@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{net::Ipv4Addr, sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
 use libnp::{Addr, PortProtocol};
@@ -12,13 +12,11 @@ use tokio::{
 const CLIENT_REQUEST_TIMEOUT_SECS: u16 = 1;
 
 async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>) {
-    let server = nport_server::server::Builder::default()
-        .http_port(server_port)
-        .domain("localhost")
-        .client_request_timeout_secs(CLIENT_REQUEST_TIMEOUT_SECS)
-        .server()
-        .await
-        .unwrap();
+    let listen =
+        nport_server::server::Listen::new(Ipv4Addr::new(127, 0, 0, 1).into(), server_port, 0);
+    let hostnames = nport_server::server::Hostnames::new("localhost", None, None);
+    let server =
+        nport_server::server::Server::new(listen, hostnames, None, CLIENT_REQUEST_TIMEOUT_SECS);
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
     let task = tokio::spawn(async move {

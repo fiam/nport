@@ -5,7 +5,7 @@ use libnp::server::PortOpenResult;
 
 use crate::server::{client::Client, port_server, state::SharedState};
 
-pub fn validate_open(state: &SharedState, open: &libnp::client::PortOpen) -> PortOpenResult {
+pub fn validate_open(_: &SharedState, open: &libnp::client::PortOpen) -> PortOpenResult {
     let remote_port = open.remote_addr.port();
     if remote_port > 0 && remote_port < 1024 {
         return PortOpenResult::PortNotAllowed;
@@ -19,11 +19,13 @@ pub async fn open(
     open: libnp::client::PortOpen,
 ) -> Result<()> {
     use libnp::server;
+    let hostname = state.hostnames().tcp_hostname();
     let validation = validate_open(state, &open);
     let result = if validation != PortOpenResult::Ok {
         (validation, 0)
     } else {
-        let opened = port_server::server(client.clone(), state.hostname(), &open.remote_addr).await;
+        // TODO: Don't ignore the requested host
+        let opened = port_server::server(client.clone(), hostname, &open.remote_addr).await;
         match opened {
             Ok(port) => {
                 tracing::debug!(port=?port, "TCP forwarding opened");
@@ -43,7 +45,7 @@ pub async fn open(
     client
         .send(&server::Message::PortOpened(server::PortOpened {
             protocol: open.protocol,
-            hostname: state.hostname().to_string(),
+            hostname: hostname.to_string(),
             port: result.1,
             local_addr: open.local_addr,
             result: result.0,

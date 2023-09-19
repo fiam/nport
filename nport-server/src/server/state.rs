@@ -1,34 +1,24 @@
 use std::sync::Arc;
 
-use super::registry::Registry;
+use super::{
+    config::{Hostnames, Listen},
+    registry::Registry,
+};
 
 pub struct AppState {
     registry: Arc<Registry>,
-    http_port: u16,
-    https_port: u16,
-    public_https_port: u16,
-    domain: String,
-    hostname: String,
+    listen: Listen,
+    hostnames: Hostnames,
     via_tls: bool,
     client_request_timeout_secs: u16,
 }
 
 impl AppState {
-    pub fn new(
-        http_port: u16,
-        https_port: u16,
-        public_https_port: u16,
-        domain: &str,
-        hostname: &str,
-        client_request_timeout_secs: u16,
-    ) -> Self {
+    pub fn new(listen: &Listen, hostnames: &Hostnames, client_request_timeout_secs: u16) -> Self {
         Self {
             registry: Arc::new(Registry::default()),
-            http_port,
-            https_port,
-            public_https_port,
-            domain: domain.to_string(),
-            hostname: hostname.to_string(),
+            listen: listen.clone(),
+            hostnames: hostnames.clone(),
             via_tls: false,
             client_request_timeout_secs,
         }
@@ -41,11 +31,8 @@ impl AppState {
     pub fn with_tls(&self) -> Self {
         Self {
             registry: self.registry.clone(),
-            http_port: self.http_port,
-            https_port: self.https_port,
-            public_https_port: self.public_https_port,
-            domain: self.domain.clone(),
-            hostname: self.hostname.clone(),
+            listen: self.listen.clone(),
+            hostnames: self.hostnames.clone(),
             via_tls: true,
             client_request_timeout_secs: self.client_request_timeout_secs,
         }
@@ -56,23 +43,15 @@ impl AppState {
     }
 
     pub fn has_tls(&self) -> bool {
-        self.https_port > 0
+        self.https_port() > 0
     }
 
-    pub fn domain(&self) -> &str {
-        &self.domain
-    }
-
-    pub fn hostname(&self) -> &str {
-        &self.hostname
+    pub fn hostnames(&self) -> &Hostnames {
+        &self.hostnames
     }
 
     pub fn https_port(&self) -> u16 {
-        self.https_port
-    }
-
-    pub fn public_https_port(&self) -> u16 {
-        self.public_https_port
+        self.listen.https()
     }
 
     pub fn client_request_timeout_secs(&self) -> u16 {
