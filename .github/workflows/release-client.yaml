@@ -44,7 +44,6 @@ jobs:
 
       - name: Set up cargo cache
         uses: actions/cache@v3
-        continue-on-error: false
         with:
           path: |
             ~/.cargo/bin/
@@ -95,7 +94,6 @@ jobs:
 
       - name: Set up cargo cache
         uses: actions/cache@v3
-        continue-on-error: false
         with:
           path: |
             ~/.cargo/bin/
