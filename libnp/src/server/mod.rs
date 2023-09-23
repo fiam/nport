@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
+use url::Url;
 
 use crate::{error::Result, Addr, Error, PortProtocol};
 
@@ -76,24 +77,22 @@ pub struct HttpRequest {
 }
 
 fn port_origin(protocol: PortProtocol, addr: &Addr) -> String {
-    format!("{protocol}:{}", addr)
+    format!("{protocol}://{}", addr)
 }
 
 pub fn split_origin(origin: &str) -> Result<(PortProtocol, String, u16)> {
-    // TODO: This doesn't work with IP addresses
-    let parts = origin.split(':').collect::<Vec<&str>>();
-    if parts.len() != 3 {
-        return Err(Error::InvalidOrigin(format!(
-            "'{}' doesn't have 3 segments",
-            origin
-        )));
-    }
+    let url = Url::parse(origin).map_err(|e| Error::InvalidOrigin(format!("{}: {}", origin, e)))?;
     let protocol =
-        PortProtocol::from_str(parts[0]).map_err(|e| Error::InvalidOrigin(e.to_string()))?;
-    let port = parts[2]
-        .parse::<u16>()
-        .map_err(|e| Error::InvalidOrigin(format!("port {} is not a number: {}", parts[2], e)))?;
-    Ok((protocol, parts[1].to_owned(), port))
+        PortProtocol::from_str(url.scheme()).map_err(|e| Error::InvalidOrigin(e.to_string()))?;
+    let host = url.host_str().ok_or(Error::InvalidOrigin(format!(
+        "origin {} is missing a host",
+        origin
+    )))?;
+    let port = url.port().ok_or(Error::InvalidOrigin(format!(
+        "origin {} is missing a port",
+        origin
+    )))?;
+    Ok((protocol, host.to_string(), port))
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]

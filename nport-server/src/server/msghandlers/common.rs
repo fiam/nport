@@ -26,7 +26,7 @@ pub fn subdomain_for_forwarding(
         return Ok(None);
     }
     // Strip main domain, if it ends with it
-    let requested_hostname = normalized_client_subdomain(state, &requested_hostname);
+    let requested_hostname = normalized_client_subdomain(state, requested_hostname);
 
     // Now validate the rest
     if !hostname::is_valid(&requested_hostname) || requested_hostname.contains('.') {

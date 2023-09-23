@@ -97,6 +97,11 @@ impl FromStr for Addr {
 impl fmt::Display for Addr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let host = self.host.as_deref().unwrap_or(DEFAULT_ADDR_HOST);
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host.to_string()
+        };
         write!(f, "{}:{}", host, self.port)
     }
 }
