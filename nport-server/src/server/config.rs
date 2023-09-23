@@ -7,6 +7,23 @@ use crate::cert::{CloudflareUpdater, Generator, Store};
 
 use super::implementation::Server;
 
+#[derive(Debug)]
+pub struct StringList(Vec<String>);
+
+impl FromStr for StringList {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(StringList(
+            s.trim()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+        ))
+    }
+}
+
 #[derive(Debug, Envconfig)]
 pub struct Config {
     /// Set to true for production
@@ -31,6 +48,8 @@ pub struct Config {
     /// Subdomain used for TCP forwardings
     #[envconfig(from = "TCP_SUBDOMAIN", default = "")]
     pub tcp_subdomain: String,
+    #[envconfig(from = "SUBDOMAIN_BLOCKLIST", default = "")]
+    pub subdomain_blocklist: StringList,
     /// Directory to store the TLS certificates
     #[envconfig(from = "CERTS_DIR", default = "")]
     pub certs_dir: String,
@@ -79,6 +98,7 @@ impl Config {
             &self.domain,
             Some(&self.api_subdomain),
             Some(&self.tcp_subdomain),
+            Some(&self.subdomain_blocklist.0),
         );
         Ok(Server::new(
             listen,
@@ -217,6 +237,13 @@ pub struct Hostnames {
 
     api_hostname: String,
     tcp_hostname: String,
+
+    // Subdomains that are blocked
+    subdomain_blocklist: Vec<String>,
+}
+
+fn normalize_subdomain(subdomain: &str) -> String {
+    subdomain.to_lowercase()
 }
 
 impl Hostnames {
@@ -227,11 +254,22 @@ impl Hostnames {
     /// and where the main website is served from
     /// * `api` - Subdomain used for serve API
     /// * `tcp` - Subdomain to use for TCP port forwardings. Might be empty.
-    pub fn new(domain: &str, api: Option<&str>, tcp: Option<&str>) -> Self {
-        let api = api.unwrap_or_default().to_string();
-        let tcp = tcp.unwrap_or_default().to_string();
+    /// * `blocklist` - Subdomains to disallow for HTTP forwardings
+    pub fn new(
+        domain: &str,
+        api: Option<&str>,
+        tcp: Option<&str>,
+        blocklist: Option<&[String]>,
+    ) -> Self {
+        let api = normalize_subdomain(api.unwrap_or_default());
+        let tcp = normalize_subdomain(tcp.unwrap_or_default());
         let api_hostname = Hostnames::new_hostname(domain, &api);
         let tcp_hostname = Hostnames::new_hostname(domain, &tcp);
+        let subdomain_blocklist = blocklist
+            .unwrap_or_default()
+            .iter()
+            .map(|s| normalize_subdomain(s))
+            .collect();
         Self {
             domain: domain.to_string(),
             api,
@@ -239,6 +277,8 @@ impl Hostnames {
 
             api_hostname,
             tcp_hostname,
+
+            subdomain_blocklist,
         }
     }
     fn new_hostname(domain: &str, host: &str) -> String {
@@ -273,5 +313,19 @@ impl Hostnames {
     /// Hostname used to serve TCP forwardings.
     pub fn tcp_hostname(&self) -> &str {
         &self.tcp_hostname
+    }
+
+    /// Returns true iff the subdomain matches any of the configured
+    /// subdomains for api, tcp, etc...
+    pub fn is_subdomain_used(&self, subdomain: &str) -> bool {
+        let subdomain = normalize_subdomain(subdomain);
+        subdomain == self.api || subdomain == self.tcp
+    }
+
+    pub fn is_subdomain_blocked(&self, subdomain: &str) -> bool {
+        let subdomain = normalize_subdomain(subdomain);
+        self.subdomain_blocklist
+            .iter()
+            .any(|item| item == &subdomain)
     }
 }

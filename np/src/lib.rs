@@ -58,9 +58,17 @@ pub async fn run() {
                 }))
             }
             Command::Tcp { local_port } => {
+                let remote_addr = if let Some(hostname) = args.hostname {
+                    Some(Addr::from_host_and_port(
+                        &hostname,
+                        args.remote_port.unwrap_or_default(),
+                    ))
+                } else {
+                    args.remote_port.map(Addr::from_port)
+                };
+
                 tunnels.push(settings::Tunnel::Tcp(settings::TcpTunnel {
-                    hostname: args.hostname,
-                    remote_addr: args.remote_port.map(Addr::from_port),
+                    remote_addr,
                     local_addr: Addr::from_port(local_port),
                 }))
             }
@@ -97,11 +105,7 @@ pub async fn run() {
             }
             settings::Tunnel::Tcp(tcp) => {
                 client
-                    .tcp_open(
-                        &tcp.hostname.unwrap_or_default(),
-                        &tcp.remote_addr.unwrap_or_default(),
-                        &tcp.local_addr,
-                    )
+                    .tcp_open(&tcp.remote_addr.unwrap_or_default(), &tcp.local_addr)
                     .await
             }
         };

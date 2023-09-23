@@ -1,16 +1,28 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use libnp::server::PortOpenResult;
+use libnp::{server::PortOpenError, Addr};
 
 use crate::server::{client::Client, port_server, state::SharedState};
 
-pub fn validate_open(_: &SharedState, open: &libnp::client::PortOpen) -> PortOpenResult {
-    let remote_port = open.remote_addr.port();
+use super::common::normalized_client_subdomain;
+
+pub fn validate_open(
+    state: &SharedState,
+    open: &libnp::client::PortOpen,
+) -> Result<(), PortOpenError> {
+    let remote_addr = &open.remote_addr;
+    let remote_port = remote_addr.port();
     if remote_port > 0 && remote_port < 1024 {
-        return PortOpenResult::PortNotAllowed;
+        return Err(PortOpenError::PortNotAllowed);
     }
-    PortOpenResult::Ok
+    if let Some(hostname) = remote_addr.host() {
+        let normalized = normalized_client_subdomain(state, hostname);
+        if normalized != state.hostnames().tcp_hostname() {
+            return Err(PortOpenError::HostNotAllowed);
+        }
+    }
+    Ok(())
 }
 
 pub async fn open(
@@ -21,8 +33,8 @@ pub async fn open(
     use libnp::server;
     let hostname = state.hostnames().tcp_hostname();
     let validation = validate_open(state, &open);
-    let result = if validation != PortOpenResult::Ok {
-        (validation, 0)
+    let result = if let Err(error) = validation {
+        Err(error)
     } else {
         // TODO: Don't ignore the requested host
         let opened = port_server::server(client.clone(), hostname, &open.remote_addr).await;
@@ -33,22 +45,23 @@ pub async fn open(
                 let port_num = port.port();
                 client.register_port(port).await;
 
-                (server::PortOpenResult::Ok, port_num)
+                Ok(port_num)
             }
             Err(error) => {
                 tracing::warn!(remote_addr=?open.remote_addr, error=?error, "failed to open TCP port forwarding");
-                (server::PortOpenResult::PortInUse, 0)
+                Err(server::PortOpenError::InUse)
             }
         }
     };
+    let port = result.ok().unwrap_or(open.remote_addr.port());
+    let remote_addr = Addr::from_host_and_port(&hostname, port);
 
     client
         .send(&server::Message::PortOpened(server::PortOpened {
             protocol: open.protocol,
-            hostname: hostname.to_string(),
-            port: result.1,
+            remote_addr,
             local_addr: open.local_addr,
-            result: result.0,
+            error: result.err(),
         }))
         .await
 }

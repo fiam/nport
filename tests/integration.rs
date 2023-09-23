@@ -10,11 +10,22 @@ use tokio::{
 };
 
 const CLIENT_REQUEST_TIMEOUT_SECS: u16 = 1;
+const DOMAIN: &str = "localhost";
+const TCP_SUBDOMAIN: &str = "tcp";
+const BLOCK_LIST_ENTRY1: &str = "block";
+const BLOCK_LIST_ENTRY2: &str = "block-this";
+const BLOCK_LIST_ENTRY3: &str = "block-that";
 
 async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>) {
     let listen =
         nport_server::server::Listen::new(Ipv4Addr::new(127, 0, 0, 1).into(), server_port, 0);
-    let hostnames = nport_server::server::Hostnames::new("localhost", None, None);
+    let blocklist = vec![
+        BLOCK_LIST_ENTRY1.to_string(),
+        BLOCK_LIST_ENTRY2.to_string(),
+        BLOCK_LIST_ENTRY3.to_string(),
+    ];
+    let hostnames =
+        nport_server::server::Hostnames::new(DOMAIN, None, Some(TCP_SUBDOMAIN), Some(&blocklist));
     let server =
         nport_server::server::Server::new(listen, hostnames, None, CLIENT_REQUEST_TIMEOUT_SECS);
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
@@ -116,6 +127,7 @@ async fn it_forwards_http_requests() {
     const SERVER_PORT: u16 = 4001;
     let client_subdomain = "something";
     let client_hostname = "something.localhost";
+    let alternative_hostname = "something-else.localhost";
     let client_http_addr = Addr::from_port(11234);
     let (server_task, server_stop) = start_server(SERVER_PORT).await;
     let client = connected_client(SERVER_PORT).await;
@@ -138,10 +150,10 @@ async fn it_forwards_http_requests() {
         .unwrap();
     // Receive opening message
     client_message(client.clone()).await.unwrap();
-    let forwardings = client.http_forwardings().await;
-    assert_eq!(1, forwardings.len());
-    assert_eq!(client_hostname, forwardings[0].hostname());
-    assert_eq!(&client_http_addr, forwardings[0].local_addr());
+    let client1_forwardings = client.http_forwardings().await;
+    assert_eq!(1, client1_forwardings.len());
+    assert_eq!(client_hostname, client1_forwardings[0].hostname());
+    assert_eq!(&client_http_addr, client1_forwardings[0].local_addr());
 
     // If another client tries to register the same hostname, we should get an error.
     // Use a different local port intentionally
@@ -154,8 +166,33 @@ async fn it_forwards_http_requests() {
         .unwrap();
     client_message(client2.clone()).await.unwrap();
     assert_eq!(0, client2.http_forwardings().await.len());
-    // If the client is not running, we should get a 504 in ~CLIENT_REQUEST_TIMEOUT_SECS
 
+    // Do the same test as above, but try to the subdomain.domain name scheme
+    let client3 = connected_client(SERVER_PORT).await;
+    let client3_http_addr = client_http_addr.with_port(client_http_addr.port() + 200);
+
+    client3
+        .http_open(client_hostname, &client3_http_addr)
+        .await
+        .unwrap();
+    client_message(client3.clone()).await.unwrap();
+    assert_eq!(0, client3.http_forwardings().await.len());
+
+    // Forwarding via subdomain.DOMAIN should work too
+    let client4 = connected_client(SERVER_PORT).await;
+    let client4_http_addr = client_http_addr.with_port(client_http_addr.port() + 300);
+
+    client4
+        .http_open(alternative_hostname, &client4_http_addr)
+        .await
+        .unwrap();
+    client_message(client4.clone()).await.unwrap();
+    let client4_forwardings = client4.http_forwardings().await;
+    assert_eq!(1, client4_forwardings.len());
+    assert_eq!(alternative_hostname, client4_forwardings[0].hostname());
+    assert_eq!(&client4_http_addr, client4_forwardings[0].local_addr());
+
+    // If the client is not running, we should get a 504 in ~CLIENT_REQUEST_TIMEOUT_SECS
     let before = SystemTime::now();
     let resp = response_for_hostname(SERVER_PORT, client_hostname).await;
     let delta = SystemTime::now()
@@ -246,23 +283,28 @@ async fn it_forwards_tcp_connections() {
     // Opening port 0 should assign a random port
     let remote_addr = Addr::from_port(0);
     client
-        .tcp_open("", &remote_addr, &client_local_addr)
+        .tcp_open(&remote_addr, &client_local_addr)
         .await
         .unwrap();
     client_message(client.clone()).await.unwrap();
 
     let forwardings = client.port_forwardings().await;
     assert_eq!(1, forwardings.len());
+    assert_eq!(
+        Some(format!("{}.{}", TCP_SUBDOMAIN, DOMAIN)),
+        forwardings[0].remote_addr().host().map(str::to_string)
+    );
     assert_eq!(PortProtocol::Tcp, forwardings[0].protocol());
-    assert_ne!("", forwardings[0].hostname());
-    assert_ne!(0, forwardings[0].remote_port());
+    assert!(forwardings[0].remote_addr().host().is_some());
+    assert_ne!(Some(""), forwardings[0].remote_addr().host());
+    assert_ne!(0, forwardings[0].remote_addr().port());
     assert_eq!(&client_local_addr, forwardings[0].local_addr());
 
     // Opening a second client on the same remote host:port should fail
-    let remote_addr2 = Addr::from_port(forwardings[0].remote_port());
+    let remote_addr2 = forwardings[0].remote_addr().clone();
     let client2 = connected_client(SERVER_PORT).await;
     client2
-        .tcp_open(forwardings[0].hostname(), &remote_addr2, &client_local_addr)
+        .tcp_open(&remote_addr2, &client_local_addr)
         .await
         .unwrap();
     client_message(client2.clone()).await.unwrap();
@@ -271,7 +313,7 @@ async fn it_forwards_tcp_connections() {
 
     let (client_task, client_stop) = run_client(client);
 
-    let remote_port = forwardings[0].remote_port();
+    let remote_port = forwardings[0].remote_addr().port();
 
     let mut buf = vec![0; 32 * 1024];
 
@@ -344,6 +386,97 @@ async fn it_forwards_tcp_connections() {
             .unwrap()
             .kind()
     );
+    server_stop.send(()).await.unwrap();
+    server_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn it_disallows_forwarding_privileged_ports() {
+    const SERVER_PORT: u16 = 4003;
+    // tracing_subscriber::fmt().with_env_filter("trace").init();
+    let client_local_addr = Addr::from_port(11235);
+    let (server_task, server_stop) = start_server(SERVER_PORT).await;
+    let client = connected_client(SERVER_PORT).await;
+
+    // Opening port 0 should assign a random port
+    let remote_addr = Addr::from_port(0);
+    client
+        .tcp_open(&remote_addr, &client_local_addr)
+        .await
+        .unwrap();
+    client_message(client.clone()).await.unwrap();
+    server_stop.send(()).await.unwrap();
+    server_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn it_disallows_forwarding_blocked_hostnames() {
+    const SERVER_PORT: u16 = 4004;
+    // tracing_subscriber::fmt().with_env_filter("trace").init();
+    let (server_task, server_stop) = start_server(SERVER_PORT).await;
+    let client = connected_client(SERVER_PORT).await;
+
+    // This should be refused TCP_SUBDOMAIN is used for TCP forwardings
+    let client_http_addr = Addr::from_port(11234);
+
+    let tcp_subdomain_subdomain = TCP_SUBDOMAIN.to_string();
+    let tcp_subdomain_full_domain = format!("{}.{}", TCP_SUBDOMAIN, DOMAIN);
+
+    client
+        .http_open(&tcp_subdomain_subdomain, &client_http_addr)
+        .await
+        .unwrap();
+    client_message(client.clone()).await.unwrap();
+
+    assert_eq!(0, client.http_forwardings().await.len());
+    assert_eq!(
+        404,
+        response_for_hostname(SERVER_PORT, &tcp_subdomain_full_domain)
+            .await
+            .status()
+    );
+
+    // TCP_SUBDOMAIN, but with the full domain should fail too
+    client
+        .http_open(&tcp_subdomain_full_domain, &client_http_addr)
+        .await
+        .unwrap();
+    client_message(client.clone()).await.unwrap();
+
+    assert_eq!(0, client.http_forwardings().await.len());
+    assert_eq!(
+        404,
+        response_for_hostname(SERVER_PORT, &tcp_subdomain_full_domain)
+            .await
+            .status()
+    );
+
+    // Blocked via blocklist
+    let blocked_full_domain = format!("{}.{}", BLOCK_LIST_ENTRY1, DOMAIN);
+    client
+        .http_open(BLOCK_LIST_ENTRY1, &client_http_addr)
+        .await
+        .unwrap();
+    client_message(client.clone()).await.unwrap();
+
+    assert_eq!(0, client.http_forwardings().await.len());
+    assert_eq!(
+        404,
+        response_for_hostname(SERVER_PORT, &blocked_full_domain)
+            .await
+            .status()
+    );
+
+    let remote_tcp_addr = Addr::from_host_and_port(BLOCK_LIST_ENTRY1, 0);
+    // Opening TCP to a blocked subdomain should fail too
+    client
+        .tcp_open(&remote_tcp_addr, &client_http_addr)
+        .await
+        .unwrap();
+    client_message(client.clone()).await.unwrap();
+
+    assert_eq!(0, client.port_forwardings().await.len());
+
     server_stop.send(()).await.unwrap();
     server_task.await.unwrap();
 }

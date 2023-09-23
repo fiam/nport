@@ -42,8 +42,7 @@ impl Drop for Port {
 
 async fn serve_socket(
     client: Weak<Client>,
-    hostname: &str,
-    port: u16,
+    remote_addr: &Addr,
     mut socket: TcpStream,
     from: SocketAddr,
 ) -> ControlFlow<()> {
@@ -59,9 +58,8 @@ async fn serve_socket(
         let connect = PortConnect {
             uuid: uuid.clone(),
             protocol: libnp::PortProtocol::Tcp,
-            hostname: hostname.to_string(),
-            port,
-            from: from.to_string(),
+            remote: remote_addr.clone(),
+            from: Addr::from_socket_addr(&from),
         };
 
         if let Err(error) = client.send(&Message::PortConnect(connect)).await {
@@ -181,6 +179,7 @@ pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<
     let addr = listener.local_addr()?;
     tracing::debug!(addr=?addr, "listening on port");
     let port = addr.port();
+    let remote_addr = Addr::from_host_and_port(&hostname, port);
     let (closer_tx, mut closer_rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         loop {
@@ -190,7 +189,7 @@ pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<
                     match listener_result {
                         Ok((socket, from)) => {
                             tracing::debug!(port, hostname, from=?from, "new port connection");
-                            if let ControlFlow::Break(_) = serve_socket(client.clone(), &hostname, port, socket, from).await {
+                            if let ControlFlow::Break(_) = serve_socket(client.clone(), &remote_addr, socket, from).await {
                                 break;
                             }
                         },

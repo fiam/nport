@@ -54,10 +54,11 @@ impl HttpResponse {
     }
 }
 
+/// A request to open a tunnel from the given remote address
+/// to the local address using the provided protocol
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PortOpen {
     pub protocol: PortProtocol,
-    pub hostname: String,
     pub remote_addr: Addr,
     pub local_addr: Addr,
 }

@@ -47,6 +47,10 @@ impl Addr {
         self.host.is_some()
     }
 
+    pub fn host(&self) -> Option<&str> {
+        self.host.as_deref()
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }

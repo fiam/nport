@@ -6,6 +6,7 @@ use libnp::client::Message;
 
 use super::{client::Client, state::SharedState};
 
+mod common;
 mod http;
 mod port;
 

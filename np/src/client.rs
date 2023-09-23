@@ -8,8 +8,6 @@ use futures_util::SinkExt;
 use futures_util::StreamExt;
 
 use libnp::server::split_origin;
-use libnp::server::HttpOpenResult;
-use libnp::server::PortOpenResult;
 use libnp::Addr;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -44,8 +42,7 @@ impl HttpForwarding {
 #[derive(Debug)]
 pub struct PortForwarding {
     protocol: PortProtocol,
-    hostname: String,
-    remote_port: u16,
+    remote_addr: Addr,
     local_addr: Addr,
 }
 
@@ -53,11 +50,8 @@ impl PortForwarding {
     pub fn protocol(&self) -> PortProtocol {
         self.protocol
     }
-    pub fn hostname(&self) -> &str {
-        &self.hostname
-    }
-    pub fn remote_port(&self) -> u16 {
-        self.remote_port
+    pub fn remote_addr(&self) -> &Addr {
+        &self.remote_addr
     }
     pub fn local_addr(&self) -> &Addr {
         &self.local_addr
@@ -123,19 +117,16 @@ impl Client {
     }
 
     pub async fn http_register(&self, msg: &libnp::server::HttpOpened) -> Result<()> {
-        match &msg.result {
-            HttpOpenResult::Ok => {
-                let hostname = msg.hostname.clone();
-                let mut http_forwardings = self.http_forwardings.write().await;
-                if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
-                    entry.insert(msg.local_addr.clone());
-                    Ok(())
-                } else {
-                    Err(Error::HttpHostnameAlreadyRegistered(hostname))
-                }
-            }
-            HttpOpenResult::InUse => Err(Error::HttpHostnameAlreadyInUse(msg.hostname.clone())),
-            HttpOpenResult::Invalid => Err(Error::HttpHostnameInvalid(msg.hostname.clone())),
+        let hostname = msg.hostname.clone();
+        if let Some(error) = msg.error {
+            return Err(Error::HttpOpenError(hostname, error));
+        };
+        let mut http_forwardings = self.http_forwardings.write().await;
+        if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
+            entry.insert(msg.local_addr.clone());
+            Ok(())
+        } else {
+            Err(Error::HttpHostnameAlreadyRegistered(hostname))
         }
     }
 
@@ -152,26 +143,19 @@ impl Client {
         self.http_forwardings.read().await.get(hostname).cloned()
     }
 
-    pub async fn tcp_open(
-        &self,
-        hostname: &str,
-        remote_addr: &Addr,
-        local_addr: &Addr,
-    ) -> Result<()> {
-        self.port_open(PortProtocol::Tcp, hostname, remote_addr, local_addr)
+    pub async fn tcp_open(&self, remote_addr: &Addr, local_addr: &Addr) -> Result<()> {
+        self.port_open(PortProtocol::Tcp, remote_addr, local_addr)
             .await
     }
 
     pub async fn port_open(
         &self,
         protocol: PortProtocol,
-        hostname: &str,
         remote_addr: &Addr,
         local_addr: &Addr,
     ) -> Result<()> {
         let msg = libnp::client::Message::PortOpen(libnp::client::PortOpen {
             protocol,
-            hostname: hostname.to_owned(),
             remote_addr: remote_addr.clone(),
             local_addr: local_addr.clone(),
         });
@@ -179,11 +163,8 @@ impl Client {
     }
 
     pub async fn port_register(&self, msg: &libnp::server::PortOpened) -> Result<()> {
-        let PortOpenResult::Ok = msg.result else {
-            return Err(Error::RemotePortNotAllocated(
-                msg.origin(),
-                msg.result.to_string(),
-            ));
+        if let Some(error) = msg.error {
+            return Err(Error::PortOpenError(msg.remote_addr.clone(), error));
         };
         let origin = msg.origin();
         let mut port_forwardings = self.port_forwardings.write().await;
@@ -299,8 +280,7 @@ impl Client {
             let (protocol, hostname, port) = split_origin(entry.0).unwrap();
             forwardings.push(PortForwarding {
                 protocol,
-                hostname,
-                remote_port: port,
+                remote_addr: Addr::from_host_and_port(&hostname, port),
                 local_addr: entry.1.clone(),
             });
         });

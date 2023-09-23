@@ -1,3 +1,7 @@
+use libnp::{
+    server::{HttpOpenError, PortOpenError},
+    Addr,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -16,14 +20,16 @@ pub enum Error {
     Hyper(#[from] hyper::Error),
     #[error("http client error {0}")]
     HyperHttp(#[from] hyper::http::Error),
-    #[error("HTTP hostname {0} is already being used")]
-    HttpHostnameAlreadyInUse(String),
-    #[error("HTTP hostname {0} is invalid")]
-    HttpHostnameInvalid(String),
-    #[error("HTTP hostname {0} already registered")]
+
+    #[error("could not forward HTTP hostname {0}: {1}")]
+    HttpOpenError(String, HttpOpenError),
+    #[error("HTTP hostname {0} is already registered")]
     HttpHostnameAlreadyRegistered(String),
     #[error("HTTP hostname {0} not registered")]
     HttpHostnameNotRegistered(String),
+
+    #[error("Could not forward port {0}: {1}")]
+    PortOpenError(Addr, PortOpenError),
     #[error("Port origin {0} already registered")]
     PortOriginAlreadyRegistered(String),
     #[error("Port origin {0} not registered")]

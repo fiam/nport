@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::server::{client::Client, hostname, state::SharedState};
+use crate::server::{
+    client::Client,
+    msghandlers::common::{subdomain_for_forwarding, ValidationError},
+    state::SharedState,
+};
 
 pub async fn open(
     state: &SharedState,
@@ -11,22 +15,25 @@ pub async fn open(
 ) -> Result<()> {
     use libnp::server;
 
-    let subdomain = if !open.hostname.is_empty() {
-        // Don't allow invalid hostnames nor names with multiple labels
-        if !hostname::is_valid(&open.hostname) || open.hostname.contains('.') {
+    let subdomain = match subdomain_for_forwarding(state, Some(&open.hostname)) {
+        Err(error) => {
+            let error = match error {
+                ValidationError::Invalid => server::HttpOpenError::Invalid,
+                ValidationError::Disallowed => server::HttpOpenError::Disallowed,
+            };
             return client
-                .send(&server::Message::HttpOpened(server::HttpOpened::failed(
+                .send(&server::Message::HttpOpened(server::HttpOpened::error(
                     &open.hostname,
                     &open.local_addr,
-                    server::HttpOpenResult::Invalid,
+                    error,
                 )))
                 .await;
         }
-        open.hostname
-    } else {
-        names::Generator::with_naming(names::Name::Numbered)
-            .next()
-            .unwrap()
+        Ok(hostname) => hostname.unwrap_or_else(|| {
+            names::Generator::with_naming(names::Name::Numbered)
+                .next()
+                .unwrap()
+        }),
     };
     let domain = state.hostnames().domain();
     let hostname = if domain.is_empty() {
@@ -40,10 +47,10 @@ pub async fn open(
         .await
     {
         return client
-            .send(&server::Message::HttpOpened(server::HttpOpened::failed(
+            .send(&server::Message::HttpOpened(server::HttpOpened::error(
                 &hostname,
                 &open.local_addr,
-                server::HttpOpenResult::InUse,
+                server::HttpOpenError::InUse,
             )))
             .await;
     }
@@ -62,19 +69,19 @@ pub async fn close(
     close: libnp::client::HttpClose,
 ) -> Result<()> {
     let hostname = &close.hostname;
-    let result = if !state
+    let error = if state
         .registry()
         .release_http_hostname(&client, hostname)
         .await
     {
-        libnp::server::HttpCloseResult::NotRegistered
-    } else {
         tracing::debug!(hostname, "HTTP forwarding closed");
-        libnp::server::HttpCloseResult::Ok
+        None
+    } else {
+        Some(libnp::server::HttpCloseError::NotRegistered)
     };
     let response = libnp::server::Message::HttpClosed(libnp::server::HttpClosed {
         hostname: hostname.to_owned(),
-        result,
+        error,
     });
     client.send(&response).await
 }
