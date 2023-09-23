@@ -63,7 +63,25 @@ struct Connection {
     receiver: Arc<RwLock<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
 }
 
+#[derive(Clone)]
+pub struct VersionInfo {
+    pkg_version: String,
+    git_ref: String,
+    git_is_dirty: bool,
+}
+
+impl VersionInfo {
+    pub fn new(pkg_version: &str, git_ref: &str, git_is_dirty: bool) -> Self {
+        Self {
+            pkg_version: pkg_version.to_string(),
+            git_ref: git_ref.to_string(),
+            git_is_dirty,
+        }
+    }
+}
+
 pub struct Client {
+    version_info: VersionInfo,
     // hostname => local_addr
     http_forwardings: RwLock<HashMap<String, Addr>>,
     // protocol:hostname:remote_port => local addr
@@ -73,15 +91,10 @@ pub struct Client {
     connection: RwLock<Option<Connection>>,
 }
 
-impl Default for Client {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Client {
-    pub fn new() -> Self {
+    pub fn new(version_info: VersionInfo) -> Self {
         Self {
+            version_info,
             http_forwardings: RwLock::new(HashMap::new()),
             port_forwardings: RwLock::new(HashMap::new()),
             port_writers: RwLock::new(HashMap::new()),
@@ -91,7 +104,13 @@ impl Client {
 
     pub async fn connect(&self, server: &str, secure: bool) -> Result<()> {
         let protocol = if secure { "wss" } else { "ws" };
-        let server_url = format!("{protocol}://{server}/v1/connect");
+        let server_url = format!(
+            "{protocol}://{server}/v1/connect?v={}&ref={}&dirty={}&os={}",
+            self.version_info.pkg_version,
+            self.version_info.git_ref,
+            self.version_info.git_is_dirty,
+            std::env::consts::OS,
+        );
         let (stream, response) = connect_async(server_url).await?;
         tracing::debug!(response=?response, "connected to server");
         let (sender, receiver) = stream.split();

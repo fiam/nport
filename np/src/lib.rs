@@ -3,13 +3,17 @@ pub mod dispatch;
 pub mod error;
 mod settings;
 
-use std::sync::Arc;
+use std::{process, sync::Arc};
 
 use clap::{ArgAction, Parser};
 use libnp::Addr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use client::Client;
+use client::{Client, VersionInfo};
+
+use shadow_rs::shadow;
+
+shadow!(build);
 
 #[derive(clap::Parser)]
 struct Arguments {
@@ -27,6 +31,7 @@ struct Arguments {
 enum Command {
     Http { local_port: u16 },
     Tcp { local_port: u16 },
+    Version,
 }
 
 pub async fn run() {
@@ -51,6 +56,20 @@ pub async fn run() {
     let mut tunnels = s.tunnels.unwrap_or(Vec::new());
     if let Some(command) = args.command {
         match command {
+            Command::Version => {
+                let commit_suffix = if build::GIT_CLEAN { "" } else { "-dirty" };
+                println!(
+                    "nport {} ({}{}) built on {} with {} {}\n",
+                    build::PKG_VERSION,
+                    build::SHORT_COMMIT,
+                    commit_suffix,
+                    build::BUILD_TIME,
+                    build::RUST_VERSION,
+                    build::RUST_CHANNEL
+                );
+                println!("See nport.io for more information");
+                process::exit(0);
+            }
             Command::Http { local_port } => {
                 tunnels.push(settings::Tunnel::Http(settings::HttpTunnel {
                     hostname: args.hostname,
@@ -80,7 +99,8 @@ pub async fn run() {
         return;
     }
 
-    let client = Arc::new(Client::new());
+    let version_info = VersionInfo::new(build::PKG_VERSION, build::SHORT_COMMIT, !build::GIT_CLEAN);
+    let client = Arc::new(Client::new(version_info));
 
     match client.connect(&s.server.hostname, s.server.secure).await {
         Ok(()) => {

@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow, time::Duratio
 use anyhow::Result;
 use axum::{
     body::Bytes,
-    extract::{ws::WebSocket, ConnectInfo, OriginalUri, State, WebSocketUpgrade},
+    extract::{ws::WebSocket, ConnectInfo, OriginalUri, Query, State, WebSocketUpgrade},
     headers::HeaderName,
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
@@ -18,9 +18,11 @@ use crate::server::{msghandlers, state::SharedState};
 
 pub async fn websocket(
     State(state): State<SharedState>,
+    Query(params): Query<HashMap<String, String>>,
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
+    tracing::debug!(params = ?params, "new websocket connection");
     ws.on_upgrade(move |socket| handle_socket(state, socket, addr))
 }
 

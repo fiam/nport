@@ -2,7 +2,7 @@ use std::{net::Ipv4Addr, sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
 use libnp::{Addr, PortProtocol};
-use np::client::Client;
+use np::client::{Client, VersionInfo};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -45,7 +45,8 @@ async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::S
 }
 
 async fn connected_client(server_port: u16) -> Arc<np::client::Client> {
-    let client = Arc::new(np::client::Client::new());
+    let version_info = VersionInfo::new("0.0.0", "aa", true);
+    let client = Arc::new(np::client::Client::new(version_info));
     client
         .connect(&format!("localhost:{server_port}"), false)
         .await
@@ -111,7 +112,8 @@ fn run_client(client: Arc<Client>) -> (tokio::task::JoinHandle<Arc<Client>>, mps
 async fn it_connects() {
     const SERVER_PORT: u16 = 4000;
     let (server_task, server_stop) = start_server(SERVER_PORT).await;
-    let client = np::client::Client::new();
+    let version_info = VersionInfo::new("0.0.0", "aa", true);
+    let client = Arc::new(np::client::Client::new(version_info));
     client
         .connect(&format!("localhost:{}", SERVER_PORT), false)
         .await

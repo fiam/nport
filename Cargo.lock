@@ -1359,6 +1359,7 @@ dependencies = [
  "libnp",
  "rustls-webpki",
  "serde",
+ "shadow-rs",
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.18.0",
