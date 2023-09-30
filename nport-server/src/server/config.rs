@@ -5,7 +5,7 @@ use envconfig::Envconfig;
 
 use crate::cert::{CloudflareUpdater, Generator, Store};
 
-use super::implementation::Server;
+use super::implementation::{Options, Server};
 
 #[derive(Debug)]
 pub struct StringList(Vec<String>);
@@ -77,6 +77,8 @@ pub struct Config {
     /// to a forwarding requests with 504 status code
     #[envconfig(from = "CLIENT_REQUEST_TIMEOUT_SECS", default = "30")]
     pub client_request_timeout_secs: u16,
+    #[envconfig(from = "SEND_WELCOME_MESSAGE", default = "true")]
+    pub send_welcome_message: bool,
 }
 
 impl Default for Config {
@@ -100,12 +102,8 @@ impl Config {
             Some(&self.tcp_subdomain),
             Some(&self.subdomain_blocklist.0),
         );
-        Ok(Server::new(
-            listen,
-            hostnames,
-            cert_store,
-            self.client_request_timeout_secs,
-        ))
+        let options = Options::new(self.client_request_timeout_secs, self.send_welcome_message);
+        Ok(Server::new(listen, hostnames, cert_store, options))
     }
 
     fn has_acme(&self) -> bool {

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::{
     config::{Hostnames, Listen},
+    implementation::Options,
     registry::Registry,
 };
 
@@ -10,17 +11,17 @@ pub struct AppState {
     listen: Listen,
     hostnames: Hostnames,
     via_tls: bool,
-    client_request_timeout_secs: u16,
+    options: Options,
 }
 
 impl AppState {
-    pub fn new(listen: &Listen, hostnames: &Hostnames, client_request_timeout_secs: u16) -> Self {
+    pub fn new(listen: &Listen, hostnames: &Hostnames, options: &Options) -> Self {
         Self {
             registry: Arc::new(Registry::default()),
             listen: listen.clone(),
             hostnames: hostnames.clone(),
             via_tls: false,
-            client_request_timeout_secs,
+            options: options.clone(),
         }
     }
 
@@ -34,7 +35,7 @@ impl AppState {
             listen: self.listen.clone(),
             hostnames: self.hostnames.clone(),
             via_tls: true,
-            client_request_timeout_secs: self.client_request_timeout_secs,
+            options: self.options.clone(),
         }
     }
 
@@ -54,8 +55,8 @@ impl AppState {
         self.listen.https()
     }
 
-    pub fn client_request_timeout_secs(&self) -> u16 {
-        self.client_request_timeout_secs
+    pub fn options(&self) -> &Options {
+        &self.options
     }
 }
 

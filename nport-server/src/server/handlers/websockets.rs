@@ -33,7 +33,12 @@ pub async fn websocket(
     ws.on_upgrade(move |socket| handle_socket(state, socket, addr))
 }
 
+/// Sends a welcome message to a client that has just connected, unless the server config
+/// has disabled client welcome messages, in that case it returns Ok().
 async fn send_welcome(state: &SharedState, client: &client::Client) -> Result<()> {
+    if !state.options().send_welcome_message() {
+        return Ok(());
+    }
     let build_info = BuildInfo::default();
     let welcome = messages::server::payload::Message::Print(messages::server::Print {
         message: format!(
@@ -106,7 +111,8 @@ pub async fn forward(
 
     match rx {
         Ok(rx) => {
-            let response_timeout = Duration::from_secs(state.client_request_timeout_secs().into());
+            let response_timeout =
+                Duration::from_secs(state.options().client_request_timeout_secs().into());
             let response = match timeout(response_timeout, rx).await {
                 Ok(result) => match result {
                     Ok(response) => response,

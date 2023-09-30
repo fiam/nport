@@ -51,13 +51,36 @@ async fn to_tls_middleware<B>(
 
     next.run(request).await
 }
+
+#[derive(Clone, Debug)]
+pub struct Options {
+    client_request_timeout_secs: u16,
+    send_welcome_message: bool,
+}
+
+impl Options {
+    pub fn new(client_request_timeout_secs: u16, send_welcome_message: bool) -> Self {
+        Self {
+            client_request_timeout_secs,
+            send_welcome_message,
+        }
+    }
+
+    pub fn client_request_timeout_secs(&self) -> u16 {
+        self.client_request_timeout_secs
+    }
+    pub fn send_welcome_message(&self) -> bool {
+        self.send_welcome_message
+    }
+}
+
 pub struct Server {
     listen: Listen,
     hostnames: Hostnames,
     cert_store: Option<Arc<cert::Store>>,
-    client_request_timeout_secs: u16,
     http_shutdown: Mutex<Option<oneshot::Sender<()>>>,
     https_shutdown: Mutex<Option<oneshot::Sender<()>>>,
+    options: Options,
 }
 
 impl Server {
@@ -65,15 +88,15 @@ impl Server {
         listen: Listen,
         hostnames: Hostnames,
         cert_store: Option<Arc<cert::Store>>,
-        client_request_timeout_secs: u16,
+        options: Options,
     ) -> Self {
         Self {
             listen,
             hostnames,
             cert_store,
-            client_request_timeout_secs,
             http_shutdown: Mutex::new(None),
             https_shutdown: Mutex::new(None),
+            options,
         }
     }
 
@@ -186,11 +209,7 @@ impl Server {
     }
 
     pub async fn run(&self) {
-        let state = Arc::new(AppState::new(
-            &self.listen,
-            &self.hostnames,
-            self.client_request_timeout_secs,
-        ));
+        let state = Arc::new(AppState::new(&self.listen, &self.hostnames, &self.options));
 
         let http = self.run_http(state.clone());
         let https = self.run_https(state.clone());

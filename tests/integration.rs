@@ -26,8 +26,8 @@ async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::S
     ];
     let hostnames =
         nport_server::server::Hostnames::new(DOMAIN, None, Some(TCP_SUBDOMAIN), Some(&blocklist));
-    let server =
-        nport_server::server::Server::new(listen, hostnames, None, CLIENT_REQUEST_TIMEOUT_SECS);
+    let options = nport_server::server::Options::new(CLIENT_REQUEST_TIMEOUT_SECS, false);
+    let server = nport_server::server::Server::new(listen, hostnames, None, options);
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
     let task = tokio::spawn(async move {

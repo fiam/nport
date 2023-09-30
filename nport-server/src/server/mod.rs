@@ -9,4 +9,7 @@ mod port_server;
 mod registry;
 mod state;
 
-pub use {config::Config, config::Hostnames, config::Listen, implementation::Server};
+pub use {
+    config::Config, config::Hostnames, config::Listen, implementation::Options,
+    implementation::Server,
+};
