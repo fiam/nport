@@ -65,7 +65,7 @@ pub async fn open(
     let port = result
         .ok()
         .unwrap_or(Addr::from_address(open.remote_address.as_ref()).port());
-    let remote_addr = Addr::from_host_and_port(&hostname, port);
+    let remote_addr = Addr::from_host_and_port(hostname, port);
 
     client
         .send(Message::PortOpened(PortOpened {

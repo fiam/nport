@@ -130,7 +130,7 @@ async fn send_request(
 pub async fn request(client: Arc<Client>, req: &HttpRequest) -> Result<()> {
     let payload = send_request(client.clone(), req)
         .await
-        .map(|data| http_response::Payload::Data(data))
+        .map(http_response::Payload::Data)
         .map_err(|error| http_response::Payload::Error(HttpResponseError { error: Some(error) }));
     // TODO: Find a better way to expand this
     let payload = match payload {
