@@ -12,7 +12,7 @@ use axum::{
 use libnp::{
     messages::{
         self,
-        server::{payload::Message, HttpScheme},
+        server::{payload::Message, HttpScheme, PrintLevel},
     },
     Addr,
 };
@@ -20,7 +20,7 @@ use tokio::{sync::oneshot::Receiver, time::timeout};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::server::client;
+use crate::server::{build_info::BuildInfo, client};
 use crate::server::{msghandlers, state::SharedState};
 
 pub async fn websocket(
@@ -33,8 +33,27 @@ pub async fn websocket(
     ws.on_upgrade(move |socket| handle_socket(state, socket, addr))
 }
 
+async fn send_welcome(state: &SharedState, client: &client::Client) -> Result<()> {
+    let build_info = BuildInfo::default();
+    let welcome = messages::server::payload::Message::Print(messages::server::Print {
+        message: format!(
+            "Connected to nport server on {} - v{} ({}) built on {}",
+            state.hostnames().domain(),
+            build_info.pkg_version,
+            build_info.short_commit_hash,
+            build_info.build_time,
+        ),
+        level: PrintLevel::Info as i32,
+    });
+    client.send(welcome).await
+}
+
 async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
     let client = state.registry().register(socket, who).await;
+    if let Err(error) = send_welcome(&state, &client).await {
+        tracing::warn!(error=?error, "could not send welcome message, disconnecting");
+        return;
+    }
     loop {
         let request = client.recv().await;
         let result = match request {

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use libnp::messages::server::payload::Message;
+use libnp::messages::server::PrintLevel;
 
 use crate::client::Client;
 use crate::error::Result;
@@ -59,6 +60,15 @@ pub async fn message(client: Arc<Client>, msg: Message) -> Result<()> {
             tracing::debug!(uuid = close.uuid, "requested to close port");
             if let Err(err) = client.port_close(&close).await {
                 tracing::error!(error=?err,uuid=close.uuid, "closing port");
+            }
+        }
+        Message::Print(print) => {
+            match PrintLevel::try_from(print.level).unwrap_or(PrintLevel::Info) {
+                PrintLevel::Trace => tracing::trace!("{}", print.message),
+                PrintLevel::Debug => tracing::debug!("{}", print.message),
+                PrintLevel::Info => tracing::info!("{}", print.message),
+                PrintLevel::Warning => tracing::warn!("{}", print.message),
+                PrintLevel::Error => tracing::error!("{}", print.message),
             }
         }
     }

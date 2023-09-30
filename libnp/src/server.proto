@@ -109,6 +109,20 @@ message PortReceive {
 // port
 message PortClose { string uuid = 1; }
 
+enum PrintLevel {
+  PRINT_LEVEL_TRACE = 0;
+  PRINT_LEVEL_DEBUG = 1;
+  PRINT_LEVEL_INFO = 2;
+  PRINT_LEVEL_WARNING = 3;
+  PRINT_LEVEL_ERROR = 4;
+}
+
+// Sent by the server to the client to print a message in the client's console
+message Print {
+  string message = 1;
+  PrintLevel level = 2;
+}
+
 message Payload {
   oneof message {
     HttpOpened httpOpened = 1;
@@ -118,5 +132,6 @@ message Payload {
     PortConnect portConnect = 5;
     PortReceive portReceive = 6;
     PortClose portClose = 7;
+    Print print = 8;
   }
 }

@@ -1,3 +1,4 @@
+mod build_info;
 mod client;
 mod config;
 mod handlers;
