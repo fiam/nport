@@ -33,6 +33,7 @@ time = "0.3.19"
 enum-as-inner = "=0.5.1" # See https://github.com/bluejekyll/trust-dns/issues/1946
 shadow-rs = "0.23.0"
 envconfig = "0.10.0"
+prost = "0.12.1"
 
 [build-dependencies]
 shadow-rs = "0.23.0"

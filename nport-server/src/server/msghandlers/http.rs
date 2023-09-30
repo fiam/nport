@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use libnp::messages;
+use libnp::messages::server::payload::Message;
+use libnp::messages::server::{HttpCloseError, HttpClosed, HttpOpenError, HttpOpened};
 
 use crate::server::{
     client::Client,
@@ -11,22 +14,20 @@ use crate::server::{
 pub async fn open(
     state: &SharedState,
     client: Arc<Client>,
-    open: libnp::client::HttpOpen,
+    open: messages::client::HttpOpen,
 ) -> Result<()> {
-    use libnp::server;
-
-    let subdomain = match subdomain_for_forwarding(state, Some(&open.hostname)) {
+    let subdomain = match subdomain_for_forwarding(state, open.hostname.as_deref()) {
         Err(error) => {
             let error = match error {
-                ValidationError::Invalid => server::HttpOpenError::Invalid,
-                ValidationError::Disallowed => server::HttpOpenError::Disallowed,
+                ValidationError::Invalid => HttpOpenError::Invalid,
+                ValidationError::Disallowed => HttpOpenError::Disallowed,
             };
             return client
-                .send(&server::Message::HttpOpened(server::HttpOpened::error(
-                    &open.hostname,
-                    &open.local_addr,
-                    error,
-                )))
+                .send(Message::HttpOpened(HttpOpened {
+                    hostname: open.hostname.clone().unwrap_or_default(),
+                    local_address: open.local_address,
+                    error: Some(error.into()),
+                }))
                 .await;
         }
         Ok(hostname) => hostname.unwrap_or_else(|| {
@@ -47,26 +48,27 @@ pub async fn open(
         .await
     {
         return client
-            .send(&server::Message::HttpOpened(server::HttpOpened::error(
-                &hostname,
-                &open.local_addr,
-                server::HttpOpenError::InUse,
-            )))
+            .send(Message::HttpOpened(HttpOpened {
+                hostname,
+                local_address: open.local_address,
+                error: Some(HttpOpenError::InUse.into()),
+            }))
             .await;
     }
     tracing::debug!(hostname, "HTTP forwarding opened");
     client
-        .send(&server::Message::HttpOpened(server::HttpOpened::ok(
-            &hostname,
-            &open.local_addr,
-        )))
+        .send(Message::HttpOpened(HttpOpened {
+            hostname,
+            local_address: open.local_address,
+            error: None,
+        }))
         .await
 }
 
 pub async fn close(
     state: &SharedState,
     client: Arc<Client>,
-    close: libnp::client::HttpClose,
+    close: messages::client::HttpClose,
 ) -> Result<()> {
     let hostname = &close.hostname;
     let error = if state
@@ -77,19 +79,19 @@ pub async fn close(
         tracing::debug!(hostname, "HTTP forwarding closed");
         None
     } else {
-        Some(libnp::server::HttpCloseError::NotRegistered)
+        Some(HttpCloseError::NotRegistered)
     };
-    let response = libnp::server::Message::HttpClosed(libnp::server::HttpClosed {
-        hostname: hostname.to_owned(),
-        error,
+    let response = Message::HttpClosed(HttpClosed {
+        hostname: hostname.to_string(),
+        error: error.map(|e| e.into()),
     });
-    client.send(&response).await
+    client.send(response).await
 }
 
 pub async fn response(
     _: &SharedState,
     client: Arc<Client>,
-    response: libnp::client::HttpResponse,
+    response: messages::client::HttpResponse,
 ) -> Result<()> {
     client.send_http_response(response).await?;
     Ok(())

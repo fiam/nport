@@ -1,19 +1,33 @@
-pub mod client;
+//pub mod client;
 pub mod common;
 pub mod error;
-pub mod server;
 
 use std::fmt;
 use std::net::{AddrParseError, SocketAddr};
 use std::str::FromStr;
 
 pub use error::Error;
+use messages::common::{Address, PortProtocol};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use simple_error::SimpleError;
+use url::Url;
 
 const DEFAULT_ADDR_HOST: &str = "127.0.0.1";
 const LOCALHOST: &str = "localhost";
+
+pub mod messages {
+    pub mod common {
+        include!(concat!(env!("OUT_DIR"), "/messages.common.rs"));
+    }
+    pub mod client {
+        include!(concat!(env!("OUT_DIR"), "/messages.client.rs"));
+    }
+
+    pub mod server {
+        include!(concat!(env!("OUT_DIR"), "/messages.server.rs"));
+    }
+}
 
 fn is_loopback(addr: &str) -> bool {
     std::net::IpAddr::from_str(addr)
@@ -43,6 +57,23 @@ impl Addr {
         Self { host, port }
     }
 
+    pub fn from_socket_addr(addr: &SocketAddr) -> Self {
+        Addr::from_host_and_port(&addr.ip().to_string(), addr.port())
+    }
+
+    pub fn from_address(address: Option<&messages::common::Address>) -> Self {
+        match address {
+            Some(address) => Self {
+                host: address.host.clone(),
+                port: address.port as u16,
+            },
+            None => Self {
+                host: None,
+                port: 0,
+            },
+        }
+    }
+
     pub fn has_host(&self) -> bool {
         self.host.is_some()
     }
@@ -67,8 +98,11 @@ impl Addr {
         Ok(addr)
     }
 
-    pub fn from_socket_addr(addr: &SocketAddr) -> Self {
-        Addr::from_host_and_port(&addr.ip().to_string(), addr.port())
+    pub fn to_address(&self) -> messages::common::Address {
+        messages::common::Address {
+            host: self.host.clone(),
+            port: self.port as u32,
+        }
     }
 
     fn try_parse_socket_addr(s: &str) -> Result<Self, SimpleError> {
@@ -179,21 +213,6 @@ impl<'de> Deserialize<'de> for Addr {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub enum PortProtocol {
-    Tcp,
-    //    Udp,
-}
-
-impl fmt::Display for PortProtocol {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PortProtocol::Tcp => write!(f, "tcp"),
-            //          PortProtocol::Udp => write!(f, "udp"),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PortProtocolParseError(pub String);
 
@@ -212,6 +231,33 @@ impl FromStr for PortProtocol {
             _ => Err(PortProtocolParseError(s.to_owned())),
         }
     }
+}
+
+pub fn port_origin(protocol: PortProtocol, addr: &Addr) -> String {
+    let protocol = match protocol {
+        PortProtocol::Tcp => "tcp",
+    };
+    format!("{protocol}://{}", addr)
+}
+
+pub fn port_origin_from_raw(protocol: i32, addr: Option<&Address>) -> String {
+    let addr = Addr::from_address(addr);
+    port_origin(PortProtocol::try_from(protocol).unwrap(), &addr)
+}
+
+pub fn split_origin(origin: &str) -> crate::error::Result<(PortProtocol, String, u16)> {
+    let url = Url::parse(origin).map_err(|e| Error::InvalidOrigin(format!("{}: {}", origin, e)))?;
+    let protocol =
+        PortProtocol::from_str(url.scheme()).map_err(|e| Error::InvalidOrigin(e.to_string()))?;
+    let host = url.host_str().ok_or(Error::InvalidOrigin(format!(
+        "origin {} is missing a host",
+        origin
+    )))?;
+    let port = url.port().ok_or(Error::InvalidOrigin(format!(
+        "origin {} is missing a port",
+        origin
+    )))?;
+    Ok((protocol, host.to_string(), port))
 }
 
 #[cfg(test)]

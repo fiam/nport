@@ -1,8 +1,7 @@
 use std::{ops::ControlFlow, sync::Arc};
 
 use anyhow::Result;
-
-use libnp::client::Message;
+use libnp::messages::{self, client::payload::Message};
 
 use super::{client::Client, state::SharedState};
 
@@ -13,9 +12,12 @@ mod port;
 pub async fn msg(
     state: &SharedState,
     client: Arc<Client>,
-    msg: Message,
+    payload: messages::client::Payload,
 ) -> Result<ControlFlow<()>> {
-    match msg {
+    let Some(message) = payload.message else {
+        return Ok(ControlFlow::Continue(()));
+    };
+    match message {
         /* HTTP */
         Message::HttpOpen(open) => http::open(state, client.clone(), open)
             .await

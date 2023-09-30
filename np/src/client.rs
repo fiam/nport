@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Arc;
 
 use futures_util::stream::SplitSink;
@@ -7,18 +8,23 @@ use futures_util::stream::SplitStream;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 
-use libnp::server::split_origin;
+use libnp::messages;
+use libnp::messages::common::PortProtocol;
+use libnp::port_origin_from_raw;
+use libnp::split_origin;
 use libnp::Addr;
+use prost::Message;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use libnp::common::PortMessage;
-use libnp::PortProtocol;
 
+use crate::error::HttpOpenErrorMessage;
+use crate::error::PortOpenErrorMessage;
 use crate::error::{Error, Result};
 
 pub mod port;
@@ -59,7 +65,8 @@ impl PortForwarding {
 }
 
 struct Connection {
-    sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+    sender:
+        Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>>>,
     receiver: Arc<RwLock<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
 }
 
@@ -128,28 +135,29 @@ impl Client {
     }
 
     pub async fn http_open(&self, hostname: &str, local_addr: &Addr) -> Result<()> {
-        let msg = libnp::client::Message::HttpOpen(libnp::client::HttpOpen {
-            hostname: hostname.to_owned(),
-            local_addr: local_addr.clone(),
+        let msg = messages::client::payload::Message::HttpOpen(messages::client::HttpOpen {
+            hostname: Some(hostname.to_string()),
+            local_address: Some(local_addr.to_address()),
         });
-        self.send(&msg).await
+        self.send(msg).await
     }
 
-    pub async fn http_register(&self, msg: &libnp::server::HttpOpened) -> Result<()> {
+    pub async fn http_register(&self, msg: &messages::server::HttpOpened) -> Result<()> {
         let hostname = msg.hostname.clone();
         if let Some(error) = msg.error {
-            return Err(Error::HttpOpenError(hostname, error));
+            return Err(Error::HttpOpenError(hostname, HttpOpenErrorMessage(error)));
         };
         let mut http_forwardings = self.http_forwardings.write().await;
         if let Entry::Vacant(entry) = http_forwardings.entry(hostname.clone()) {
-            entry.insert(msg.local_addr.clone());
+            let addr = Addr::from_address(msg.local_address.as_ref());
+            entry.insert(addr);
             Ok(())
         } else {
             Err(Error::HttpHostnameAlreadyRegistered(hostname))
         }
     }
 
-    pub async fn http_deregister(&self, msg: &libnp::server::HttpClosed) -> Result<()> {
+    pub async fn http_deregister(&self, msg: &messages::server::HttpClosed) -> Result<()> {
         let mut http_forwardings = self.http_forwardings.write().await;
         if let Entry::Occupied(entry) = http_forwardings.entry(msg.hostname.clone()) {
             entry.remove();
@@ -173,22 +181,25 @@ impl Client {
         remote_addr: &Addr,
         local_addr: &Addr,
     ) -> Result<()> {
-        let msg = libnp::client::Message::PortOpen(libnp::client::PortOpen {
-            protocol,
-            remote_addr: remote_addr.clone(),
-            local_addr: local_addr.clone(),
+        let msg = messages::client::payload::Message::PortOpen(messages::client::PortOpen {
+            protocol: protocol as i32,
+            remote_address: Some(remote_addr.to_address()),
+            local_address: Some(local_addr.to_address()),
         });
-        self.send(&msg).await
+        self.send(msg).await
     }
 
-    pub async fn port_register(&self, msg: &libnp::server::PortOpened) -> Result<()> {
+    pub async fn port_register(&self, msg: &messages::server::PortOpened) -> Result<()> {
         if let Some(error) = msg.error {
-            return Err(Error::PortOpenError(msg.remote_addr.clone(), error));
+            return Err(Error::PortOpenError(
+                Addr::from_address(msg.remote_address.as_ref()),
+                PortOpenErrorMessage(error),
+            ));
         };
-        let origin = msg.origin();
+        let origin = port_origin_from_raw(msg.protocol, msg.remote_address.as_ref());
         let mut port_forwardings = self.port_forwardings.write().await;
         if let Entry::Vacant(entry) = port_forwardings.entry(origin.clone()) {
-            entry.insert(msg.local_addr.clone());
+            entry.insert(Addr::from_address(msg.local_address.as_ref()));
             Ok(())
         } else {
             Err(Error::PortOriginAlreadyRegistered(origin))
@@ -219,14 +230,14 @@ impl Client {
 
     pub async fn port_connect<F, Future>(
         &self,
-        msg: &libnp::server::PortConnect,
+        msg: &messages::server::PortConnect,
         f: F,
     ) -> Result<()>
     where
         F: FnOnce(String, Addr) -> Future,
         Future: std::future::Future<Output = Result<()>>,
     {
-        let origin = msg.origin();
+        let origin = port_origin_from_raw(msg.protocol, msg.remote_address.as_ref());
         let Some(local_addr) = self.port_forwardings.read().await.get(&origin).cloned() else {
             return Err(Error::PortOriginNotRegistered(origin));
         };
@@ -245,41 +256,41 @@ impl Client {
         Ok(())
     }
 
-    pub async fn port_receive(&self, msg: &libnp::server::PortReceive) -> Result<()> {
+    pub async fn port_receive(&self, msg: &messages::server::PortReceive) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Data(msg.data.clone()))
             .await
     }
 
-    pub async fn port_close(&self, msg: &libnp::server::PortClose) -> Result<()> {
+    pub async fn port_close(&self, msg: &messages::server::PortClose) -> Result<()> {
         self.port_message(&msg.uuid, PortMessage::Close).await
     }
 
-    pub async fn send(&self, msg: &libnp::client::Message) -> Result<()> {
-        let connection = self.connection.read().await;
-        match connection.as_ref() {
-            Some(connection) => {
-                let encoded = libnp::client::encode(msg)?;
-                let encoded_msg = Message::Binary(encoded);
-                let mut sender = connection.sender.write().await;
-                Ok(sender.send(encoded_msg).await?)
-            }
-            None => Err(Error::Disconnected),
-        }
+    pub async fn send(&self, msg: libnp::messages::client::payload::Message) -> Result<()> {
+        let conn = self.connection.read().await;
+        let Some(connection) = conn.as_ref() else {
+            return Err(Error::Disconnected);
+        };
+        let payload = messages::client::Payload { message: Some(msg) };
+        let mut buf = Vec::new();
+        buf.reserve(payload.encoded_len());
+        payload.encode(&mut buf)?;
+        let message = tungstenite::Message::Binary(buf);
+        let mut sender = connection.sender.write().await;
+        Ok(sender.send(message).await?)
     }
 
-    pub async fn recv(&self) -> Result<libnp::server::Message> {
-        let connection = self.connection.read().await;
-        match connection.as_ref() {
-            Some(connection) => {
-                let mut receiver = connection.receiver.write().await;
-                let received = receiver.next().await.ok_or(Error::Disconnected)??;
-                match received {
-                    Message::Binary(data) => Ok(libnp::server::decode(&data)?),
-                    _ => Err(Error::InvalidMessageType),
-                }
-            }
-            None => Err(Error::Disconnected),
-        }
+    pub async fn recv(&self) -> Result<messages::server::payload::Message> {
+        let conn = self.connection.read().await;
+        let Some(connection) = conn.as_ref() else {
+            return Err(Error::Disconnected);
+        };
+        let mut receiver = connection.receiver.write().await;
+        let received = receiver.next().await.ok_or(Error::Disconnected)??;
+        let tungstenite::Message::Binary(data) = received else {
+            return Err(Error::InvalidMessageType);
+        };
+        messages::server::Payload::decode(&mut Cursor::new(data))
+            .map(|p| p.message.ok_or(Error::MalformedMessage))?
     }
 
     pub async fn http_forwardings(&self) -> Vec<HttpForwarding> {

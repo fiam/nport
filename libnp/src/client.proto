@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package messages.client;
+
+// A request to open an HTTP(S) forwarding
+message HttpOpen {
+  optional string hostname = 1;
+  messages.common.Address local_address = 2;
+}
+
+message HttpClose { string hostname = 1; }
+
+message HttpResponseErrorForwardingNotRegistered { string hostname = 1; }
+message HttpResponseErrorInvalidMethod {
+  string method = 1;
+  string error = 2;
+}
+message HttpResponseErrorInvalidHeaderName {
+  string header_name = 1;
+  string error = 2;
+}
+message HttpResponseErrorInvalidHeaderValue {
+  string header_name = 1;
+  string header_value = 2;
+  string error = 3;
+}
+message HttpResponseErrorCreatingRequest { string error = 1; }
+message HttpResponseErrorFetchingResponse { string error = 1; }
+message HttpResponseErrorReadingResponse { string error = 1; }
+
+message HttpResponseError {
+  oneof error {
+    HttpResponseErrorForwardingNotRegistered forwarding_not_registered = 1;
+    HttpResponseErrorInvalidMethod invalid_method = 2;
+    HttpResponseErrorInvalidHeaderName invalid_header_name = 3;
+    HttpResponseErrorInvalidHeaderValue invalid_header_value = 4;
+    HttpResponseErrorCreatingRequest creating_request = 5;
+    HttpResponseErrorFetchingResponse fetching_response = 6;
+    HttpResponseErrorReadingResponse reading_response = 7;
+  }
+}
+
+message HttpResponseData {
+  map<string, bytes> headers = 1;
+  uint32 status_code = 2;
+  bytes body = 3;
+}
+
+message HttpResponse {
+  string uuid = 1;
+  oneof payload {
+    HttpResponseError error = 2;
+    HttpResponseData data = 3;
+  }
+}
+
+// A request to open a tunnel from the given remote address
+// to the local address using the provided protocol
+message PortOpen {
+  messages.common.PortProtocol protocol = 1;
+  optional messages.common.Address remote_address = 2;
+  messages.common.Address local_address = 3;
+}
+
+message PortConnectedError { string error = 1; }
+
+message PortConnected {
+  string uuid = 1;
+  optional PortConnectedError error = 2;
+}
+
+message PortReceive {
+  string uuid = 1;
+  bytes data = 2;
+}
+
+message PortClose { string uuid = 1; }
+
+message Payload {
+  oneof message {
+    HttpOpen http_open = 1;
+    HttpClose http_close = 2;
+    HttpResponse http_response = 3;
+    PortOpen port_open = 4;
+    PortConnected port_connected = 5;
+    PortReceive port_receive = 6;
+    PortClose port_close = 7;
+  }
+}

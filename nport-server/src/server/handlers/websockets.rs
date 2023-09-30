@@ -9,6 +9,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use libnp::{
+    messages::{
+        self,
+        server::{payload::Message, HttpScheme},
+    },
+    Addr,
+};
 use tokio::{sync::oneshot::Receiver, time::timeout};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -95,12 +102,16 @@ pub async fn forward(
                 }
             };
             debug!(response.uuid, "HTTP response");
-            match response.payload {
-                libnp::client::HttpResponsePayload::Error(error) => {
+            let Some(payload) = response.payload else {
+                warn!("empty response payload");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+            match payload {
+                messages::client::http_response::Payload::Error(error) => {
                     info!(error = ?error, "error response");
                     StatusCode::BAD_GATEWAY.into_response()
                 }
-                libnp::client::HttpResponsePayload::Data(data) => {
+                messages::client::http_response::Payload::Data(data) => {
                     let header_map = data
                         .headers
                         .into_iter()
@@ -130,7 +141,7 @@ pub async fn forward(
                         })
                         .collect::<HeaderMap>();
                     (
-                        StatusCode::from_u16(data.status_code).unwrap(),
+                        StatusCode::from_u16(data.status_code as u16).unwrap(),
                         header_map,
                         data.body,
                     )
@@ -153,7 +164,7 @@ async fn enqueue_request(
     original_uri: String,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Receiver<libnp::client::HttpResponse>> {
+) -> Result<Receiver<messages::client::HttpResponse>> {
     let handler = state.registry().get_by_http_hostname(hostname).await;
     match handler {
         Some(handler) => {
@@ -168,20 +179,22 @@ async fn enqueue_request(
                 })
                 .collect::<HashMap<String, Vec<u8>>>();
             let rx = handler.register_http_request(&uuid).await;
-            let request = libnp::server::HttpRequest {
+            let request = messages::server::HttpRequest {
                 uuid,
                 hostname: hostname.to_string(),
-                addr: addr.to_string(),
-                protocol: if state.via_tls() { "https" } else { "http" }.to_string(),
+                http_client_address: Some(Addr::from_socket_addr(&addr).to_address()),
+                scheme: if state.via_tls() {
+                    HttpScheme::Http
+                } else {
+                    HttpScheme::Https
+                } as i32,
                 method: method.to_string(),
                 uri: original_uri,
                 headers: header_map,
-                body: body.to_vec(),
+                body: Some(body.to_vec()),
             };
 
-            handler
-                .send(&libnp::server::Message::HttpRequest(request))
-                .await?;
+            handler.send(Message::HttpRequest(request)).await?;
 
             Ok(rx)
         }

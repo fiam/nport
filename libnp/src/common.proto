@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package messages.common;
+
+enum PortProtocol {
+  PORT_PROTOCOL_TCP = 0;
+}
+
+message Address {
+  optional string host = 1;
+  uint32 port = 2;
+}

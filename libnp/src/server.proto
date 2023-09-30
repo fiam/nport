@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package messages.server;
+
+enum HttpOpenError {
+  // Hostname is being used by another client
+  HTTP_OPEN_ERROR_IN_USE = 0;
+  // Hostname is not valid (e.g. contains a dot)
+  HTTP_OPEN_ERROR_INVALID = 1;
+  // Hostname is disallowed (e.g. part of the blocklist)
+  HTTP_OPEN_ERROR_DISALLOWED = 2;
+}
+
+// Sent by the server in response to the client to open an HTTP forwarding
+message HttpOpened {
+  // Hostname that was assigned
+  string hostname = 1;
+  // The local address to forward this HTTP tunnel to
+  messages.common.Address local_address = 2;
+  // Errors during the creating of the forwarding, if any
+  optional HttpOpenError error = 3;
+}
+
+enum HttpCloseError {
+  // Hostname was not registered
+  HTTP_CLOSE_ERROR_NOT_REGISTERED = 0;
+}
+
+// Sent by the server to acknowledge a request from the client to close an HTTP
+// forwarding
+message HttpClosed {
+  string hostname = 1;
+  optional HttpCloseError error = 2;
+}
+
+enum HttpScheme {
+  HTTP_SCHEME_HTTP = 0;
+  HTTP_SCHEME_HTTPS = 1;
+}
+
+// An HTTP request was received by the server to be forwarded to the np client
+message HttpRequest {
+  string uuid = 1;
+  // hostname the request was sent to
+  string hostname = 2;
+  // Address of the HTTP client making the request
+  messages.common.Address http_client_address = 3;
+  // Scheme used for the request
+  HttpScheme scheme = 4;
+  // HTTP method
+  string method = 5;
+  // HTTP uri TODO: absolute or relative?
+  string uri = 6;
+  // HTTP headers received from the HTTP client, normalized to lowercase
+  map<string, bytes> headers = 7;
+  // Request body, if any
+  optional bytes body = 8;
+}
+
+enum PortOpenError {
+  // Port or host:port is already in use
+  PORT_OPEN_ERROR_IN_USE = 0;
+  // Port is not allowed (e.g. priviledged port)
+  PORT_OPEN_ERROR_PORT_NOT_ALLOWED = 1;
+  // Host is not allowed (e.g. blocklisted)
+  PORT_OPEN_ERROR_HOST_NOT_ALLOWED = 2;
+}
+
+// Sent in response to a PortOpen. Indicates the result of creating the
+// forwarding
+message PortOpened {
+  // Protocol used by the port that was opened
+  messages.common.PortProtocol protocol = 1;
+  // Remote address opened for forwarding. Note that this won't
+  // necessarily match the address specified by the client (e.g. client
+  // requested port 0 and the server assigned a random one)
+  messages.common.Address remote_address = 2;
+  // local address that the client will forward this port to
+  messages.common.Address local_address = 3;
+  // Error when opening the port (if any)
+  optional PortOpenError error = 4;
+}
+
+// Sent when a client is trying to connect the the remote address
+// of the tunnel
+message PortConnect {
+  // uuid which uniquely identifies this client connection. The same uuid
+  // is then when transmitting PortReceive and PortClose.
+  string uuid = 1;
+  // Protocol used by the tunnel
+  messages.common.PortProtocol protocol = 2;
+  // Remote address (i.e. the tunnel entry managed by the server)
+  messages.common.Address remote_address = 3;
+  // Client address that's trying to connect to the port
+  messages.common.Address from_address = 4;
+}
+
+// Data was received in a open port
+message PortReceive {
+  // uuid which uniquely identifies this client connection
+  string uuid = 1;
+  // data packet
+  bytes data = 2;
+}
+
+// Sent by the server when the remote end closes a forwarded connection in a
+// port
+message PortClose { string uuid = 1; }
+
+message Payload {
+  oneof message {
+    HttpOpened httpOpened = 1;
+    HttpClosed httpClosed = 2;
+    HttpRequest httpRequest = 3;
+    PortOpened portOpened = 4;
+    PortConnect portConnect = 5;
+    PortReceive portReceive = 6;
+    PortClose portClose = 7;
+  }
+}

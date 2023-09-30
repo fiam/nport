@@ -1,7 +1,7 @@
 use std::{net::Ipv4Addr, sync::Arc, time::SystemTime};
 
 use httptest::Expectation;
-use libnp::{Addr, PortProtocol};
+use libnp::{messages::common::PortProtocol, Addr};
 use np::client::{Client, VersionInfo};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

@@ -5,7 +5,9 @@ use std::{
 };
 
 use anyhow::Result;
-use libnp::{client::PortConnectedResult, common::PortMessage, Addr};
+use libnp::messages::server::{PortClose, PortConnect, PortReceive};
+use libnp::messages::{common::PortProtocol, server::payload::Message};
+use libnp::{common::PortMessage, Addr};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -46,8 +48,6 @@ async fn serve_socket(
     mut socket: TcpStream,
     from: SocketAddr,
 ) -> ControlFlow<()> {
-    use libnp::server::{Message, PortClose, PortConnect, PortReceive};
-
     let uuid = Uuid::new_v4().to_string();
 
     let (messages_writer, mut messages_reader) = mpsc::channel::<libnp::common::PortMessage>(4);
@@ -57,12 +57,13 @@ async fn serve_socket(
 
         let connect = PortConnect {
             uuid: uuid.clone(),
-            protocol: libnp::PortProtocol::Tcp,
-            remote: remote_addr.clone(),
-            from: Addr::from_socket_addr(&from),
+            protocol: PortProtocol::Tcp as i32,
+            remote_address: Some(remote_addr.to_address()),
+            from_address: Some(Addr::from_socket_addr(&from).to_address()),
         };
 
-        if let Err(error) = client.send(&Message::PortConnect(connect)).await {
+        let message = Message::PortConnect(connect);
+        if let Err(error) = client.send(message).await {
             tracing::warn!(error=?error, "sending PortConnect to client");
             return ControlFlow::Break(());
         }
@@ -75,8 +76,8 @@ async fn serve_socket(
             }
         };
 
-        if let PortConnectedResult::Error(error) = response.result {
-            tracing::debug!(error, "client couldn't connect");
+        if let Some(error) = response.error {
+            tracing::debug!(error=?error, "client couldn't connect");
             return ControlFlow::Continue(());
         }
 
@@ -123,6 +124,7 @@ async fn serve_socket(
                                         let close = PortClose {
                                             uuid: uuid.clone()
                                         };
+
                                         Message::PortClose(close)
                                     } else {
                                         tracing::trace!(uuid, size, "sending data to client");
@@ -132,7 +134,7 @@ async fn serve_socket(
                                         };
                                         Message::PortReceive(receive)
                                     };
-                                    if let Err(error) = client.send(&msg).await {
+                                    if let Err(error) = client.send(msg).await {
                                         tracing::warn!(error=?error, "error sending data to client, closing");
                                     }
                                     if size == 0 {

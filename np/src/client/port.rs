@@ -7,7 +7,7 @@ use tokio::{
     time::timeout,
 };
 
-use libnp::{common::PortMessage, Addr};
+use libnp::{common::PortMessage, messages, Addr};
 
 use crate::error::Result;
 
@@ -50,18 +50,18 @@ fn client_port(
                                 Ok(size) => {
                                     if let Some(client) = client.upgrade() {
                                         let msg = if size == 0 {
-                                            let close = libnp::client::PortClose {
+                                            let close = messages::client::PortClose {
                                                 uuid: uuid.clone(),
                                             };
-                                            libnp::client::Message::PortClose(close)
+                                            messages::client::payload::Message::PortClose(close)
                                         } else {
-                                            let receive = libnp::client::PortReceive {
+                                            let receive = messages::client::PortReceive {
                                                 uuid: uuid.clone(),
                                                 data: buf[..size].to_vec(),
                                             };
-                                            libnp::client::Message::PortReceive(receive)
+                                            messages::client::payload::Message::PortReceive(receive)
                                         };
-                                        if let Err(error) = client.send(&msg).await {
+                                        if let Err(error) = client.send(msg.clone()).await {
                                             tracing::warn!(error=?error, "error sending data to client, closing");
                                             break 'port;
                                         }

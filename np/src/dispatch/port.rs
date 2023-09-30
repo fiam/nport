@@ -1,25 +1,27 @@
 use std::sync::Arc;
 
+use libnp::messages::client::payload::Message;
+use libnp::messages::client::{PortConnected, PortConnectedError};
+use libnp::messages::server::PortConnect;
+
 use crate::client::Client;
 use crate::error::Result;
 
-pub async fn connect(client: Arc<Client>, connect: &libnp::server::PortConnect) -> Result<()> {
-    use libnp::client::{Message, PortConnected, PortConnectedResult};
-
+pub async fn connect(client: Arc<Client>, connect: &PortConnect) -> Result<()> {
     let client_copy = client.clone();
-    let result = match client
+    let error = client
         .port_connect(connect, |uuid, addr| async move {
             crate::client::port::start(client_copy, &uuid, addr).await
         })
         .await
-    {
-        Ok(()) => PortConnectedResult::Ok,
-        Err(error) => PortConnectedResult::Error(error.to_string()),
-    };
+        .map_err(|e| PortConnectedError {
+            error: e.to_string(),
+        })
+        .err();
     client
-        .send(&Message::PortConnected(PortConnected {
+        .send(Message::PortConnected(PortConnected {
             uuid: connect.uuid.clone(),
-            result,
+            error,
         }))
         .await
 }

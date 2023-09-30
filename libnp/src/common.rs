@@ -1,14 +1,5 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PortReceive {
-    pub uuid: String,
-    pub data: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PortReceived {}
-
+// PorMessage is used internally to synchronize access to ports
+// in both the client and server
 pub enum PortMessage {
     Data(Vec<u8>),
     Close,
