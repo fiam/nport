@@ -26,6 +26,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          version: "24.x"
+
       - name: Install Rust toolchain
         run: rustup toolchain install stable --component rustfmt --component clippy
 
