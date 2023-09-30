@@ -3,7 +3,7 @@ pub mod dispatch;
 pub mod error;
 mod settings;
 
-use std::{process, sync::Arc};
+use std::{process, sync::Arc, time::Duration};
 
 use clap::{ArgAction, Parser};
 use libnp::Addr;
@@ -32,6 +32,21 @@ enum Command {
     Http { local_port: u16 },
     Tcp { local_port: u16 },
     Version,
+}
+
+static MAX_CONNECT_RETRIES: u32 = 5;
+static CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+pub async fn connect_failure(retries: &mut u32) {
+    *retries += 1;
+    if *retries > MAX_CONNECT_RETRIES {
+        tracing::error!("can't connect to server, giving up");
+        process::exit(1);
+    }
+    // Increase delay with exponential backoff
+    let delay = CONNECT_RETRY_DELAY * 2u32.pow(*retries);
+    tracing::error!("can't connect to server, retrying in {:?}", delay);
+    tokio::time::sleep(delay).await;
 }
 
 pub async fn run() {
@@ -102,50 +117,57 @@ pub async fn run() {
     let version_info = VersionInfo::new(build::PKG_VERSION, build::SHORT_COMMIT, !build::GIT_CLEAN);
     let client = Arc::new(Client::new(version_info));
 
-    match client.connect(&s.server.hostname, s.server.secure).await {
-        Ok(()) => {
-            tracing::info!(
-                server = s.server.hostname,
-                secure = s.server.secure,
-                "connected"
-            );
-        }
-        Err(error) => {
-            tracing::error!(error=?error, server=s.server.hostname, "can't connect to server");
-            return;
-        }
-    }
-
-    for tunnel in tunnels {
-        let result = match tunnel {
-            settings::Tunnel::Http(http) => {
-                client
-                    .http_open(&http.hostname.unwrap_or_default(), &http.local_addr)
-                    .await
-            }
-            settings::Tunnel::Tcp(tcp) => {
-                client
-                    .tcp_open(&tcp.remote_addr.unwrap_or_default(), &tcp.local_addr)
-                    .await
-            }
-        };
-        if let Err(error) = result {
-            tracing::error!(error=?error, "can't open connection");
-            return;
-        }
-    }
+    let mut connect_retries = 0;
 
     loop {
-        match client.recv().await {
-            Ok(msg) => {
-                tracing::trace!(msg=?msg, "server message");
-                if let Err(error) = dispatch::message(client.clone(), msg).await {
-                    tracing::error!(error=?error, "handling server message");
-                }
+        match client.connect(&s.server.hostname, s.server.secure).await {
+            Ok(()) => {
+                tracing::info!(
+                    server = s.server.hostname,
+                    secure = s.server.secure,
+                    "connected"
+                );
             }
             Err(error) => {
-                tracing::error!(error=?error, "error receiving data from server");
-                return;
+                tracing::error!(error=?error, server=s.server.hostname, "can't connect to server");
+                connect_failure(&mut connect_retries).await;
+                continue;
+            }
+        }
+
+        for tunnel in &tunnels {
+            let result = match tunnel {
+                settings::Tunnel::Http(http) => {
+                    let hostname = http.hostname.as_deref().unwrap_or("");
+                    client.http_open(hostname, &http.local_addr).await
+                }
+                settings::Tunnel::Tcp(tcp) => {
+                    let remote_addr = tcp.remote_addr.clone().unwrap_or_default();
+                    client.tcp_open(&remote_addr, &tcp.local_addr).await
+                }
+            };
+            if let Err(error) = result {
+                tracing::error!(error=?error, "can't set up tunnels");
+                connect_failure(&mut connect_retries).await;
+                continue;
+            }
+        }
+
+        // Reset connect_retries back to zero
+        connect_retries = 0;
+
+        'read: loop {
+            match client.recv().await {
+                Ok(msg) => {
+                    tracing::trace!(msg=?msg, "server message");
+                    if let Err(error) = dispatch::message(client.clone(), msg).await {
+                        tracing::error!(error=?error, "handling server message");
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(error=?error, "receiving data from server, reconnecting");
+                    break 'read;
+                }
             }
         }
     }
