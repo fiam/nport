@@ -22,18 +22,17 @@ acme-lib = "0.8.2"
 async-trait = "0.1.64"
 reqwest = { version = "0.11.14", features = ["json"] }
 serde = "1.0.152"
-trust-dns-resolver = "0.22.0"
+trust-dns-resolver = "0.23.0"
 tracing-test = "0.2.4"
-rustls = "0.20.8"
-axum-server = { version = "0.4.5", features = ["tls-rustls"] }
+rustls = "0.21.7"
+axum-server = { version = "0.5.1", features = ["tls-rustls"] }
 dotenvy = "0.15.7"
 serde_json = "1.0.93"
-x509-parser = "0.14.0"
+x509-parser = "0.15.1"
 time = "0.3.19"
-enum-as-inner = "=0.5.1" # See https://github.com/bluejekyll/trust-dns/issues/1946
-shadow-rs = "0.23.0"
+shadow-rs = "0.24.0"
 envconfig = "0.10.0"
 prost = "0.12.1"
 
 [build-dependencies]
-shadow-rs = "0.23.0"
+shadow-rs = "0.24.0"

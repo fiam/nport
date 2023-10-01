@@ -37,7 +37,7 @@ impl Generator {
 
     async fn txt_lookup(&self, record: &str) -> anyhow::Result<Vec<String>> {
         let resolver =
-            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).unwrap();
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
         let response = resolver.txt_lookup(record).await?;
         Ok(response.into_iter().map(|r| r.to_string()).collect())
