@@ -1,11 +1,17 @@
 # syntax=docker/dockerfile:1.2
 
 ## Builder
+ARG RUST_VERSION=1.71.0
+ARG PROTOC_VERSION=24.3
 
-FROM rust:1.71.0-slim as builder
+FROM rust:$RUST_VERSION-slim as builder
+ENV PROTOC_VERSION=24.3
 COPY . /src
 WORKDIR /src/nport-server
-RUN apt-get update && apt-get -y install libssl-dev pkg-config
+RUN apt-get update && apt-get -y install libssl-dev pkg-config curl unzip
+RUN curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
+    && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip \
+    && mv bin/protoc /usr/local/bin/protoc
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/registry \
