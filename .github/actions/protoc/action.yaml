@@ -1,5 +1,8 @@
 name: Install the protoc compiler
 description: This action uses arduino/setup-protoc to install protoc
+inputs:
+  repo-token:
+    required: true
 runs:
   using: "composite"
   steps:
@@ -7,3 +10,4 @@ runs:
       uses: arduino/setup-protoc@v2
       with:
         version: "24.x"
+        repo-token: ${{ inputs.repo-token }}

@@ -42,17 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - uses: ./.github/actions/cargo-cache
 
       - name: Install cross
         run: which cross || cargo install cross --force --git https://github.com/cross-rs/cross
@@ -92,17 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up cargo cache
-        uses: actions/cache@v3
+      - uses: ./.github/actions/cargo-cache
+      - uses: ./.github/actions/protoc
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add toolchains
         run: rustup target add x86_64-apple-darwin && rustup target add aarch64-apple-darwin
