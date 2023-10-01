@@ -11,4 +11,5 @@ for file in $CARGO_TOML_FILES; do
 done
 
 git add ${CARGO_TOML_FILES}
+git commit -m "chore: bump version to $version"
 git tag -s v$version -m "release: version $version"
