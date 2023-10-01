@@ -1,5 +1,4 @@
-nport
-=====
+# nport
 
 nport is a tool for exposing your local ports or servers on the Internet.
 
@@ -12,15 +11,15 @@ the API at `api.nport.io` to expose your ports. Use `np -h` to see the available
 Usage: np [OPTIONS] [COMMAND]
 
 Commands:
-  http     
-  tcp      
-  version  
+  http
+  tcp
+  version
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-  -H, --hostname <HOSTNAME>        
-  -R, --remote-port <REMOTE_PORT>  
-  -N, --no-config-file             
+  -H, --hostname <HOSTNAME>
+  -R, --remote-port <REMOTE_PORT>
+  -N, --no-config-file
   -h, --help                       Print help
 ```
 
@@ -29,7 +28,6 @@ Options:
 `np` looks for a file named `nport.{yaml,json,ini}` in the current directory, with the following format:
 
 ```yaml
-
 tunnels:
   - type: http
     # This assigns my-hostname.nport.io to your HTTP tunnel. If empty, a random hostname is generated
@@ -43,7 +41,6 @@ tunnels:
 server:
   hostname: api.nport.io # API server host, defaults to api.nport.io
   secure: true # Use TLS when talking to the server, defaults to true
-
 ```
 
 ## Running your own server
