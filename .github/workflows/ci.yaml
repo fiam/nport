@@ -11,25 +11,11 @@ jobs:
     name: Run CI checks
     runs-on: ubuntu-latest
     steps:
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v2
-        with:
-          version: "24.x"
+      - uses: ./.github/actions/cargo-cache
+      - uses: ./.github/actions/protoc
 
       - name: Install Rust toolchain
         run: rustup toolchain install stable --component rustfmt --component clippy
