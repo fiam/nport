@@ -1,0 +1,16 @@
+name: Setup cargo cache
+description: This action uses actions/cache to set up a cache for cargo builds
+runs:
+  using: "composite"
+  steps:
+    - name: Set up cargo cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-

@@ -1,0 +1,9 @@
+name: Install the protoc compiler
+description: This action uses arduino/setup-protoc to install protoc
+runs:
+  using: "composite"
+  steps:
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v2
+      with:
+        version: "24.x"
