@@ -37,7 +37,11 @@ enum Command {
 static MAX_CONNECT_RETRIES: u32 = 5;
 static CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
 
-pub async fn connect_failure(retries: &mut u32) {
+pub async fn connect_failure(client: &Client, retries: &mut u32) {
+    if let Err(error) = client.disconnect().await {
+        tracing::error!(?error, "internal error reconnecting to server, exiting");
+        process::exit(1);
+    }
     *retries += 1;
     if *retries > MAX_CONNECT_RETRIES {
         tracing::error!("can't connect to server, giving up");
@@ -130,7 +134,7 @@ pub async fn run() {
             }
             Err(error) => {
                 tracing::error!(error=?error, server=s.server.hostname, "can't connect to server");
-                connect_failure(&mut connect_retries).await;
+                connect_failure(&client, &mut connect_retries).await;
                 continue;
             }
         }
@@ -148,7 +152,7 @@ pub async fn run() {
             };
             if let Err(error) = result {
                 tracing::error!(error=?error, "can't set up tunnels");
-                connect_failure(&mut connect_retries).await;
+                connect_failure(&client, &mut connect_retries).await;
                 continue;
             }
         }

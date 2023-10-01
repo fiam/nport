@@ -131,6 +131,9 @@ impl Client {
 
     pub async fn disconnect(&self) -> Result<()> {
         *self.connection.write().await = None;
+        self.http_forwardings.write().await.clear();
+        self.port_forwardings.write().await.clear();
+        self.port_writers.write().await.clear();
         Ok(())
     }
 
