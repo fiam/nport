@@ -35,7 +35,7 @@ tunnels:
     local_addr: 8089 # Just a port number indicates 127.0.0.1:<port>, ip:port syntax is also supported
 
   - type: tcp
-    remote_addr: tcp.nport.io:9999 # Leave the host empty to assign the default port
+    remote_addr: tcp.nport.io:9999 # Leave the host empty to assign the default one
     local_addr: 192.168.1.7:3000
 
 server:
