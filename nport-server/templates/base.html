@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/terminal.css@0.7.2/dist/terminal.min.css" />
+  <link rel="stylesheet" href="/css/dark.css" />
+
+</head>
+
+<body class="terminal">
+
+  <div class="container">
+    <div class="terminal-nav">
+      <header class="terminal-logo">
+        <div class="logo"><a href="/" class="no-style">nport</a></div>
+      </header>
+      <nav class="terminal-menu">
+        <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+          {% block menu %}
+          {% endblock %}
+          <li style="height: 28px;">
+            <a class="github-button" href="https://github.com/fiam/nport" data-size="large" data-show-count="true"
+              aria-label="Star nport on GitHub">Star</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </div>
+
+
+  {% block content %}{% endblock %}
+
+  <div class="container">
+    <footer>
+      <p>
+        made with ❤️ by <a href="https://albertogh.com">Alberto GH</a>
+      </p>
+    </footer>
+  </div>
+
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
+
+</body>
+
+</html>

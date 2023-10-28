@@ -16,7 +16,10 @@ use axum_server::tls_rustls::RustlsConfig;
 use rustls::ServerConfig;
 use tokio::sync::{oneshot, Mutex};
 use tower::ServiceExt;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::{
+    services::ServeDir,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
 
 use crate::cert;
 
@@ -25,6 +28,7 @@ use super::handlers;
 use super::state::{AppState, SharedState};
 
 static DEFAULT_HTTPS_PORT: u16 = 443;
+static API_CONNECT_PATH: &str = "/v1/connect";
 
 async fn to_tls_middleware<B>(
     State(state): State<SharedState>,
@@ -108,10 +112,11 @@ impl Server {
                 state.clone(),
                 to_tls_middleware,
             ))
+            .fallback_service(ServeDir::new("static"))
             .with_state(state.clone());
 
         let api_router = Router::new()
-            .route("/v1/connect", get(handlers::websocket))
+            .route(API_CONNECT_PATH, get(handlers::websocket))
             .route_layer(middleware::from_fn_with_state(
                 state.clone(),
                 to_tls_middleware,
@@ -134,7 +139,7 @@ impl Server {
                 &hostname
             };
             tracing::debug!(host, main_hostname, api_hostname, "routing request");
-            let router = if host == api_hostname {
+            let router = if host == api_hostname && request.uri().path() == API_CONNECT_PATH {
                 tracing::trace!(host, "routing request to api");
                 api_router
             } else if host == main_hostname {
@@ -209,7 +214,7 @@ impl Server {
     }
 
     pub async fn run(&self) {
-        let state = Arc::new(AppState::new(&self.listen, &self.hostnames, &self.options));
+        let state = Arc::new(AppState::new(&self.listen, &self.hostnames, &self.options).unwrap());
 
         let http = self.run_http(state.clone());
         let https = self.run_https(state.clone());

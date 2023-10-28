@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use anyhow::Result;
+
 use super::{
     config::{Hostnames, Listen},
     implementation::Options,
     registry::Registry,
+    templates::Templates,
 };
 
 pub struct AppState {
@@ -12,17 +15,20 @@ pub struct AppState {
     hostnames: Hostnames,
     via_tls: bool,
     options: Options,
+    templates: Arc<Templates>,
 }
 
 impl AppState {
-    pub fn new(listen: &Listen, hostnames: &Hostnames, options: &Options) -> Self {
-        Self {
+    pub fn new(listen: &Listen, hostnames: &Hostnames, options: &Options) -> Result<Self> {
+        let templates = Arc::new(Templates::new()?);
+        Ok(Self {
             registry: Arc::new(Registry::default()),
             listen: listen.clone(),
             hostnames: hostnames.clone(),
             via_tls: false,
             options: options.clone(),
-        }
+            templates,
+        })
     }
 
     pub fn registry(&self) -> &Registry {
@@ -36,6 +42,7 @@ impl AppState {
             hostnames: self.hostnames.clone(),
             via_tls: true,
             options: self.options.clone(),
+            templates: self.templates.clone(),
         }
     }
 
@@ -57,6 +64,10 @@ impl AppState {
 
     pub fn options(&self) -> &Options {
         &self.options
+    }
+
+    pub fn templates(&self) -> &Templates {
+        &self.templates
     }
 }
 

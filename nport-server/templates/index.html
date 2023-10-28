@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block menu %}
+<li><a href="#features" class="menu-item"><span>Features</span></a>
+  <meta property="position">
+</li>
+<li><a href="#installation" class="menu-item"><span>Installation</span></a>
+  <meta property="position">
+</li>
+<li property="itemListElement" typeof="ListItem"><a href="#usage" property="item" typeof="WebPage"
+    class="menu-item active"><span property="name">Usage</span></a>
+  <meta property="position" content="1">
+</li>
+{% endblock %}
+
+
+{% block content %}
+<div class="container">
+  <p>
+    A general purpose HTTP/TCP/UDP port forwarder written in Rust.
+  </p>
+
+  <section>
+    <h2 id="features">Features</h2>
+    <ul>
+      <li>HTTP host based forwarding with transparent TLS</li>
+      <li>TCP port forwarding</li>
+      <li>UDP port forwarding</li>
+      <li>Command line interface</li>
+      <li>Per-directory configuration files</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2 id="features">Installation</h2>
+    <p>
+      Binary releases are available from the <a href="https://github.com/fiam/nport/releases">GitHub releases</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2 id="usage">Usage</h2>
+    <pre><code>
+Usage: np [OPTIONS] [COMMAND]
+
+Commands:
+  http     
+  tcp      
+  version  
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -H, --hostname &lt;HOSTNAME&gt;
+  -R, --remote-port &lt;REMOTE_PORT&gt;
+  -N, --no-config-file             
+  -h, --help                       Print help
+  </code></pre>
+  </section>
+
+</div>
+
+{% endblock %}
