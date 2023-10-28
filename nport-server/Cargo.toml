@@ -7,27 +7,27 @@ edition = "2021"
 
 [dependencies]
 libnp = { path = "../libnp" }
-axum = { version = "0.6.4", features = ["ws", "headers"] }
-futures = "0.3.25"
+axum = { version = "0.6.20", features = ["ws", "headers"] }
+futures = "0.3.29"
 names = { version = "0.14.0", default-features = false }
-tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread", "time"] }
-tower-http = { version = "0.3.5", features = ["fs", "trace"] }
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "time"] }
+tower-http = { version = "0.4.4", features = ["fs", "trace"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 anyhow = "1.0.68"
 thiserror = "1.0.38"
 tower = "0.4.13"
 uuid = { version = "1.3.0", features = ["v4", "fast-rng"] }
 acme-lib = "0.8.2"
 async-trait = "0.1.64"
-reqwest = { version = "0.11.14", features = ["json"] }
-serde = "1.0.152"
+reqwest = { version = "0.11.22", features = ["json"] }
+serde = "1.0.190"
+serde_json = "1.0.107"
 trust-dns-resolver = "0.23.0"
 tracing-test = "0.2.4"
-rustls = "0.21.7"
+rustls = "0.21.8"
 axum-server = { version = "0.5.1", features = ["tls-rustls"] }
 dotenvy = "0.15.7"
-serde_json = "1.0.93"
 x509-parser = "0.15.1"
 time = "0.3.19"
 shadow-rs = "0.24.0"
