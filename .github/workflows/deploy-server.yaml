@@ -11,6 +11,8 @@ jobs:
 
       - uses: ./.github/actions/cargo-cache
       - uses: ./.github/actions/protoc
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust toolchain
         run: rustup toolchain install stable
