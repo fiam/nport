@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/terminal.css@0.7.2/dist/terminal.min.css" />
   <link rel="stylesheet" href="/css/dark.css" />
-
+  <title>nport{% block subtitle %}{% endblock %}</title>
 </head>
 
 <body class="terminal">
@@ -19,6 +19,14 @@
       <nav class="terminal-menu">
         <ul vocab="https://schema.org/" typeof="BreadcrumbList">
           {% block menu %}
+
+          <li><a href="/" class="menu-item"><span>Home</span></a>
+            <meta property="position">
+          </li>
+          <li><a href="/stats" class="menu-item"><span>Stats</span></a>
+            <meta property="position">
+          </li>
+
           {% endblock %}
           <li style="height: 28px;">
             <a class="github-button" href="https://github.com/fiam/nport" data-size="large" data-show-count="true"

@@ -46,7 +46,7 @@ pub async fn open(
     } else {
         let remote_address = Addr::from_address(open.remote_address.as_ref());
         // TODO: Don't ignore the requested host
-        let opened = port_server::server(client.clone(), hostname, &remote_address).await;
+        let opened = port_server::server(state, client.clone(), hostname, &remote_address).await;
         match opened {
             Ok(port) => {
                 tracing::debug!(port=?port, "TCP forwarding opened");

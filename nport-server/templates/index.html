@@ -1,21 +1,16 @@
 {% extends "base.html" %}
 
-{% block menu %}
-<li><a href="#features" class="menu-item"><span>Features</span></a>
-  <meta property="position">
-</li>
-<li><a href="#installation" class="menu-item"><span>Installation</span></a>
-  <meta property="position">
-</li>
-<li property="itemListElement" typeof="ListItem"><a href="#usage" property="item" typeof="WebPage"
-    class="menu-item active"><span property="name">Usage</span></a>
-  <meta property="position" content="1">
-</li>
-{% endblock %}
-
+{% block subtitle %} - Home{% endblock %}
 
 {% block content %}
 <div class="container">
+  <nav>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#installation">Installation</a></li>
+      <li><a href="#usage">Usage</a></li>
+    </ul>
+  </nav>
   <p>
     A general purpose HTTP/TCP/UDP port forwarder written in Rust.
   </p>

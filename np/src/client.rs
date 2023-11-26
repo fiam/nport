@@ -274,8 +274,7 @@ impl Client {
             return Err(Error::Disconnected);
         };
         let payload = messages::client::Payload { message: Some(msg) };
-        let mut buf = Vec::new();
-        buf.reserve(payload.encoded_len());
+        let mut buf = Vec::with_capacity(payload.encoded_len());
         payload.encode(&mut buf)?;
         let message = tungstenite::Message::Binary(buf);
         let mut sender = connection.sender.write().await;

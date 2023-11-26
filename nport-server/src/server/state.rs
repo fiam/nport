@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use core::fmt;
+use std::{
+    fmt::{Debug, Formatter},
+    sync::Arc,
+};
 
 use anyhow::Result;
 
@@ -6,6 +10,7 @@ use super::{
     config::{Hostnames, Listen},
     implementation::Options,
     registry::Registry,
+    stats::Stats,
     templates::Templates,
 };
 
@@ -16,10 +21,24 @@ pub struct AppState {
     via_tls: bool,
     options: Options,
     templates: Arc<Templates>,
+    stats: Stats,
+}
+
+impl Debug for AppState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppState")
+            .field("via_tls", &self.via_tls)
+            .finish()
+    }
 }
 
 impl AppState {
-    pub fn new(listen: &Listen, hostnames: &Hostnames, options: &Options) -> Result<Self> {
+    pub fn new(
+        listen: &Listen,
+        hostnames: &Hostnames,
+        stats: Stats,
+        options: &Options,
+    ) -> Result<Self> {
         let templates = Arc::new(Templates::new()?);
         Ok(Self {
             registry: Arc::new(Registry::default()),
@@ -28,6 +47,7 @@ impl AppState {
             via_tls: false,
             options: options.clone(),
             templates,
+            stats,
         })
     }
 
@@ -43,6 +63,7 @@ impl AppState {
             via_tls: true,
             options: self.options.clone(),
             templates: self.templates.clone(),
+            stats: self.stats.clone(),
         }
     }
 
@@ -68,6 +89,10 @@ impl AppState {
 
     pub fn templates(&self) -> &Templates {
         &self.templates
+    }
+
+    pub fn stats(&self) -> &Stats {
+        &self.stats
     }
 }
 

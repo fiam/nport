@@ -199,8 +199,7 @@ impl Client {
         let payload = messages::server::Payload {
             message: Some(resp),
         };
-        let mut buf = Vec::new();
-        buf.reserve(payload.encoded_len());
+        let mut buf = Vec::with_capacity(payload.encoded_len());
         payload.encode(&mut buf)?;
         let message = ws::Message::Binary(buf);
         let mut sender = self.ws_sender.lock().await;

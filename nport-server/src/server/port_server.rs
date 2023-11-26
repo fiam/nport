@@ -20,7 +20,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use super::client::Client;
+use super::{client::Client, state::SharedState};
 
 #[derive(Debug)]
 pub struct Port {
@@ -172,7 +172,12 @@ async fn serve_socket(
     ControlFlow::Continue(())
 }
 
-pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<Port> {
+pub async fn server(
+    state: &SharedState,
+    client: Arc<Client>,
+    hostname: &str,
+    addr: &Addr,
+) -> Result<Port> {
     // TODO: Don't ignore host
     let addr = format!("0.0.0.0:{}", addr.port());
     let client = Arc::downgrade(&client);
@@ -180,8 +185,10 @@ pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<
     let listener = TcpListener::bind(&addr).await?;
     let addr = listener.local_addr()?;
     tracing::debug!(addr=?addr, "listening on port");
+    state.stats().tcp_ports().inc();
     let port = addr.port();
     let remote_addr = Addr::from_host_and_port(&hostname, port);
+    let state = state.clone();
     let (closer_tx, mut closer_rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         loop {
@@ -203,6 +210,7 @@ pub async fn server(client: Arc<Client>, hostname: &str, addr: &Addr) -> Result<
                 },
                 _ = &mut closer_rx => {
                     tracing::debug!(port, hostname, "port forwarding closed");
+                    state.stats().tcp_ports().dec();
                     return;
                 }
             };

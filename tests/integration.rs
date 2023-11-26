@@ -3,6 +3,7 @@ use std::{net::Ipv4Addr, sync::Arc, time::SystemTime};
 use httptest::Expectation;
 use libnp::{messages::common::PortProtocol, Addr};
 use np::client::{Client, VersionInfo};
+use nport_server::server::Stats;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -27,7 +28,8 @@ async fn start_server(server_port: u16) -> (tokio::task::JoinHandle<()>, mpsc::S
     let hostnames =
         nport_server::server::Hostnames::new(DOMAIN, None, Some(TCP_SUBDOMAIN), Some(&blocklist));
     let options = nport_server::server::Options::new(CLIENT_REQUEST_TIMEOUT_SECS, false);
-    let server = nport_server::server::Server::new(listen, hostnames, None, options);
+    let server =
+        nport_server::server::Server::new(listen, hostnames, None, Stats::default(), options);
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
     let task = tokio::spawn(async move {

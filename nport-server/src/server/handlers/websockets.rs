@@ -59,6 +59,7 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
         tracing::warn!(error=?error, "could not send welcome message, disconnecting");
         return;
     }
+    state.stats().client_connections().inc();
     loop {
         let request = client.recv().await;
         let result = match request {
@@ -82,6 +83,7 @@ async fn handle_socket(state: SharedState, socket: WebSocket, who: SocketAddr) {
 
     state.registry().deregister(client).await;
     debug!(who = ?who, "client disconnected");
+    state.stats().client_connections().dec();
 }
 
 #[derive(Debug)]

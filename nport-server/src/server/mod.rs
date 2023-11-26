@@ -9,9 +9,10 @@ mod msghandlers;
 mod port_server;
 mod registry;
 mod state;
+mod stats;
 mod templates;
 
 pub use {
     config::Config, config::Hostnames, config::Listen, error::Result, implementation::Options,
-    implementation::Server,
+    implementation::Server, stats::Stats,
 };

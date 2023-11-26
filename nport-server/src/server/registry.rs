@@ -20,6 +20,7 @@ impl Registry {
     }
 
     pub async fn deregister(&self, client: Arc<Client>) -> bool {
+        // TODO: decrement stats for HTTP hostnames
         tracing::debug!(who=?client.who(), "deregister client");
         let mut clients = self.clients.write().await;
         if let Some(index) = clients.iter().position(|item| Arc::ptr_eq(item, &client)) {

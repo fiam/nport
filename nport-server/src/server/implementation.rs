@@ -23,9 +23,12 @@ use tower_http::{
 
 use crate::cert;
 
-use super::config::{Hostnames, Listen};
 use super::handlers;
 use super::state::{AppState, SharedState};
+use super::{
+    config::{Hostnames, Listen},
+    stats::Stats,
+};
 
 static DEFAULT_HTTPS_PORT: u16 = 443;
 static API_CONNECT_PATH: &str = "/v1/connect";
@@ -53,6 +56,15 @@ async fn to_tls_middleware<B>(
         }
     }
 
+    next.run(request).await
+}
+
+async fn request_counter<B>(
+    State(state): State<SharedState>,
+    request: Request<B>,
+    next: Next<B>,
+) -> Response {
+    state.stats().http_request();
     next.run(request).await
 }
 
@@ -84,6 +96,7 @@ pub struct Server {
     cert_store: Option<Arc<cert::Store>>,
     http_shutdown: Mutex<Option<oneshot::Sender<()>>>,
     https_shutdown: Mutex<Option<oneshot::Sender<()>>>,
+    stats: Stats,
     options: Options,
 }
 
@@ -92,6 +105,7 @@ impl Server {
         listen: Listen,
         hostnames: Hostnames,
         cert_store: Option<Arc<cert::Store>>,
+        stats: Stats,
         options: Options,
     ) -> Self {
         Self {
@@ -100,6 +114,7 @@ impl Server {
             cert_store,
             http_shutdown: Mutex::new(None),
             https_shutdown: Mutex::new(None),
+            stats,
             options,
         }
     }
@@ -107,6 +122,7 @@ impl Server {
     fn build_app(&self, state: SharedState) -> Router {
         let main_router = Router::new()
             .route("/", get(handlers::home))
+            .route("/stats", get(handlers::stats))
             .route("/build_info.json", get(handlers::build_info))
             .route_layer(middleware::from_fn_with_state(
                 state.clone(),
@@ -155,11 +171,18 @@ impl Server {
         Router::new()
             .route("/*path", any(chooser.clone()))
             .route("/", any(chooser))
+            .with_state(state.clone())
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                request_counter,
+            ))
             .layer(
-                TraceLayer::new_for_http()
-                    .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+                TraceLayer::new_for_http().make_span_with(
+                    DefaultMakeSpan::new()
+                        .include_headers(true)
+                        .level(tracing::Level::INFO),
+                ),
             )
-            .with_state(state)
     }
 
     async fn run_http(&self, state: SharedState) -> anyhow::Result<()> {
@@ -214,7 +237,15 @@ impl Server {
     }
 
     pub async fn run(&self) {
-        let state = Arc::new(AppState::new(&self.listen, &self.hostnames, &self.options).unwrap());
+        let state = Arc::new(
+            AppState::new(
+                &self.listen,
+                &self.hostnames,
+                self.stats.clone(),
+                &self.options,
+            )
+            .unwrap(),
+        );
 
         let http = self.run_http(state.clone());
         let https = self.run_https(state.clone());

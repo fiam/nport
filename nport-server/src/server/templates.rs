@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
+use serde::Serialize;
 use tera::{Context, Tera};
 
 use crate::server::Result;
@@ -29,6 +30,9 @@ impl Templates {
 
         let error = include_str!("../../templates/error.html");
         tera.add_raw_template("error.html", error)?;
+
+        let stats = include_str!("../../templates/stats.html");
+        tera.add_raw_template("stats.html", stats)?;
 
         Ok(Self { tera })
     }
@@ -84,6 +88,11 @@ impl<'a> Renderer<'a> {
 
     pub fn with_context(&mut self, context: Context) -> &mut Self {
         self.context = Some(context);
+        self
+    }
+
+    pub fn with_data<S: Serialize>(&mut self, data: S) -> &mut Self {
+        self.context = Some(Context::from_serialize(data).unwrap());
         self
     }
 

@@ -56,6 +56,7 @@ pub async fn open(
             .await;
     }
     tracing::debug!(hostname, "HTTP forwarding opened");
+    state.stats().http_hostnames().inc();
     client
         .send(Message::HttpOpened(HttpOpened {
             hostname,
@@ -77,6 +78,7 @@ pub async fn close(
         .await
     {
         tracing::debug!(hostname, "HTTP forwarding closed");
+        state.stats().http_hostnames().dec();
         None
     } else {
         Some(HttpCloseError::NotRegistered)

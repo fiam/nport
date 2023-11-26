@@ -5,7 +5,10 @@ use envconfig::Envconfig;
 
 use crate::cert::{CloudflareUpdater, Generator, Store};
 
-use super::implementation::{Options, Server};
+use super::{
+    implementation::{Options, Server},
+    stats::Stats,
+};
 
 #[derive(Debug)]
 pub struct StringList(Vec<String>);
@@ -79,6 +82,14 @@ pub struct Config {
     pub client_request_timeout_secs: u16,
     #[envconfig(from = "SEND_WELCOME_MESSAGE", default = "true")]
     pub send_welcome_message: bool,
+
+    #[envconfig(from = "OTEL_SERVICE_NAME", default = "")]
+    pub otel_service_name: String,
+    #[envconfig(from = "OTEL_OTLP_ENDPOINT", default = "")]
+    pub otel_otlp_endpoint: String,
+    // key1=value1,key2=value2
+    #[envconfig(from = "OTEL_OTLP_HEADERS", default = "")]
+    pub otel_otlp_headers: String,
 }
 
 impl Default for Config {
@@ -89,7 +100,7 @@ impl Default for Config {
 }
 
 impl Config {
-    pub async fn server(self) -> anyhow::Result<Server> {
+    pub async fn server(self, stats: Option<Stats>) -> anyhow::Result<Server> {
         if self.production {
             self.production_check()?;
         }
@@ -103,7 +114,25 @@ impl Config {
             Some(&self.subdomain_blocklist.0),
         );
         let options = Options::new(self.client_request_timeout_secs, self.send_welcome_message);
-        Ok(Server::new(listen, hostnames, cert_store, options))
+        Ok(Server::new(
+            listen,
+            hostnames,
+            cert_store,
+            stats.unwrap_or_default(),
+            options,
+        ))
+    }
+
+    pub fn otel_service_name(&self) -> &str {
+        &self.otel_service_name
+    }
+
+    pub fn otel_otlp_endpoint(&self) -> &str {
+        &self.otel_otlp_endpoint
+    }
+
+    pub fn otel_otlp_headers(&self) -> &str {
+        &self.otel_otlp_headers
     }
 
     fn has_acme(&self) -> bool {

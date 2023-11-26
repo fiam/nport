@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block subtitle %} - Stats{% endblock %}
+
+{% block content %}
+
+<div class="container">
+  <table>
+    <caption>Live Stats</caption>
+    <tbody>
+      <tr>
+        <td>Connected clients</td>
+        <td>{{ client_count }}</td>
+      </tr>
+      <tr>
+        <td>Forwarded HTTP hostnames</td>
+        <td>{{ http_hostname_count }}</td>
+      </tr>
+      <tr>
+        <td>Forwarded TCP ports</td>
+        <td>{{ tcp_port_count }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
